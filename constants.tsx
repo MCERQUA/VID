@@ -1,5 +1,5 @@
 import React from 'react';
-import type { AssetCategory, LibraryAsset, AudioTrack } from './types';
+import type { AssetCategory, LibraryAsset, AudioTrack, ContentTrack } from './types';
 
 // Header Icons
 export const DeviceIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
@@ -155,9 +155,14 @@ export const LIBRARY_ASSETS: LibraryAsset[] = [
 
 export const ASSET_DRAG_TYPE = 'application/x-vid-asset';
 
+export const DEFAULT_CONTENT_TRACKS: ContentTrack[] = [
+  { id: 'V1', name: 'Video 1', clips: [], locked: false, hidden: false },
+  { id: 'V2', name: 'Video 2', clips: [], locked: false, hidden: false },
+];
+
 export const DEFAULT_AUDIO_TRACKS: AudioTrack[] = [
-  { id: 'A1', clips: [], muted: false, solo: false },
-  { id: 'A2', clips: [], muted: false, solo: false },
+  { id: 'A1', name: 'Audio 1', clips: [], muted: false, solo: false, locked: false },
+  { id: 'A2', name: 'Audio 2', clips: [], muted: false, solo: false, locked: false },
 ];
 
 // Timeline icons
@@ -189,6 +194,11 @@ export const StepBackwardIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props)
 export const PlayIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg {...props} viewBox="0 0 24 24" fill="currentColor">
     <path d="M8,5.14V19.14L19,12.14L8,5.14Z" />
+  </svg>
+);
+export const PauseIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg {...props} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M14,19H18V5H14M6,19H10V5H6V19Z" />
   </svg>
 );
 export const StepForwardIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (

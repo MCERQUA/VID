@@ -25,23 +25,28 @@ const formatDuration = (seconds?: number) => {
 const AssetTile: React.FC<{
   asset: LibraryAsset;
   onAdd: (asset: LibraryAsset) => void;
-}> = ({ asset, onAdd }) => {
+  disabled?: boolean;
+}> = ({ asset, onAdd, disabled = false }) => {
   const handleDragStart = React.useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
+      if (disabled) {
+        event.preventDefault();
+        return;
+      }
       event.dataTransfer.effectAllowed = 'copy';
       event.dataTransfer.setData(
         ASSET_DRAG_TYPE,
         JSON.stringify({ assetId: asset.id, type: asset.type })
       );
     },
-    [asset.id, asset.type]
+    [asset.id, asset.type, disabled]
   );
 
   return (
     <div
       key={asset.id}
       className="group relative rounded-lg overflow-hidden border border-zinc-700/60 bg-zinc-800 shadow hover:shadow-lg transition-shadow"
-      draggable
+      draggable={!disabled}
       onDragStart={handleDragStart}
     >
       <div className="relative aspect-[4/3] overflow-hidden">
@@ -62,8 +67,17 @@ const AssetTile: React.FC<{
         )}
         <button
           type="button"
-          onClick={() => onAdd(asset)}
-          className="w-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide bg-blue-600 text-white rounded-md mt-2 hover:bg-blue-500"
+          onClick={() => {
+            if (!disabled) {
+              onAdd(asset);
+            }
+          }}
+          disabled={disabled}
+          className={`w-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide rounded-md mt-2 ${
+            disabled
+              ? 'bg-zinc-600 text-gray-400 cursor-not-allowed'
+              : 'bg-blue-600 text-white hover:bg-blue-500'
+          }`}
         >
           {asset.type === 'music' ? 'Add to timeline' : 'Add to canvas'}
         </button>
@@ -73,7 +87,7 @@ const AssetTile: React.FC<{
 };
 
 const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile = false, onClose, className = '', style }) => {
-  const { libraryAssets, addAssetToCanvas, addMusicClip } = useCanvasState();
+  const { libraryAssets, addAssetToCanvas, addMusicClip, mode } = useCanvasState();
   const [activeCategory, setActiveCategory] = React.useState<AssetType>('character');
   const [search, setSearch] = React.useState('');
 
@@ -173,7 +187,12 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile = false, onClose, cl
           ) : (
             <div className="grid grid-cols-1 gap-3">
               {filteredAssets.map((asset) => (
-                <AssetTile key={asset.id} asset={asset} onAdd={handleAddAsset} />
+                <AssetTile
+                  key={asset.id}
+                  asset={asset}
+                  onAdd={handleAddAsset}
+                  disabled={mode !== 'edit'}
+                />
               ))}
             </div>
           )}
