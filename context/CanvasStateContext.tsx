@@ -1,17 +1,15 @@
 import React from 'react';
-import {
-  ASSET_DRAG_TYPE,
-  DEFAULT_AUDIO_TRACKS,
-  LIBRARY_ASSETS,
-  TIMELINE_DURATION,
-} from '../constants';
+import { DEFAULT_AUDIO_TRACKS, DEFAULT_CONTENT_TRACKS, LIBRARY_ASSETS, TIMELINE_DURATION } from '../constants';
 import type {
   AssetType,
   AudioClip,
   AudioTrack,
   CanvasAsset,
+  ContentClip,
+  ContentTrack,
   LibraryAsset,
   SelectedEntity,
+  TimelineMode,
   Transform,
 } from '../types';
 
@@ -22,27 +20,52 @@ const createId = () =>
     ? crypto.randomUUID()
     : `id-${Math.random().toString(36).slice(2, 9)}`;
 
-const cloneTracks = (tracks: AudioTrack[]): AudioTrack[] =>
+const cloneAudioTracks = (tracks: AudioTrack[]): AudioTrack[] =>
   tracks.map((track) => ({ ...track, clips: track.clips.map((clip) => ({ ...clip })) }));
+
+const cloneContentTracks = (tracks: ContentTrack[]): ContentTrack[] =>
+  tracks.map((track) => ({ ...track, clips: track.clips.map((clip) => ({ ...clip })) }));
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const clampTimelineTime = (value: number) => clamp(value, 0, TIMELINE_DURATION);
 
 interface CanvasStateContextValue {
   assets: CanvasAsset[];
   audioTracks: AudioTrack[];
+  contentTracks: ContentTrack[];
   libraryAssets: LibraryAsset[];
   selected: SelectedEntity;
   selectEntity: (entity: SelectedEntity) => void;
   addAssetToCanvas: (
     assetId: string,
-    options?: { position?: { x: number; y: number }; size?: { width: number; height: number } }
-  ) => void;
+    options?: {
+      position?: { x: number; y: number };
+      size?: { width: number; height: number };
+      timeline?: CanvasAsset['timeline'];
+    }
+  ) => string | null;
   addMusicClip: (assetId: string, options?: { start?: number; trackIndex?: number }) => void;
+  addVisualClip: (assetId: string, options?: { start?: number; trackIndex?: number }) => void;
   updateAssetTransform: (assetId: string, updates: Partial<Transform>) => void;
   toggleAssetVisibility: (assetId: string) => void;
   toggleAssetLock: (assetId: string) => void;
   removeEntity: (entity: SelectedEntity) => void;
   reorderAssetZIndex: (assetId: string, direction: 1 | -1) => void;
   updateAudioClip: (clipId: string, updates: Partial<AudioClip>) => void;
+  updateContentClip: (clipId: string, updates: Partial<ContentClip>) => void;
+  toggleContentTrackLock: (trackId: string) => void;
+  toggleContentTrackVisibility: (trackId: string) => void;
+  toggleAudioTrackMute: (trackId: string) => void;
+  toggleAudioTrackSolo: (trackId: string) => void;
+  toggleAudioTrackLock: (trackId: string) => void;
   timelineDuration: number;
+  currentTime: number;
+  setCurrentTime: (time: number) => void;
+  mode: TimelineMode;
+  setMode: (mode: TimelineMode) => void;
+  isPlaying: boolean;
+  play: () => void;
+  pause: () => void;
 }
 
 const CanvasStateContext = React.createContext<CanvasStateContextValue | undefined>(undefined);
@@ -52,7 +75,13 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [audioTracks, setAudioTracks] = React.useState<AudioTrack[]>(() =>
     DEFAULT_AUDIO_TRACKS.map((track) => ({ ...track, clips: track.clips.map((clip) => ({ ...clip })) }))
   );
+  const [contentTracks, setContentTracks] = React.useState<ContentTrack[]>(() =>
+    DEFAULT_CONTENT_TRACKS.map((track) => ({ ...track, clips: track.clips.map((clip) => ({ ...clip })) }))
+  );
   const [selected, setSelected] = React.useState<SelectedEntity>(null);
+  const [mode, setMode] = React.useState<TimelineMode>('edit');
+  const [currentTime, setCurrentTimeState] = React.useState(0);
+  const [isPlaying, setIsPlaying] = React.useState(false);
 
   const libraryLookup = React.useMemo(() => {
     const map = new Map<string, LibraryAsset>();
@@ -66,11 +95,25 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setSelected(entity);
   }, []);
 
+  const setCurrentTime = React.useCallback((time: number) => {
+    setCurrentTimeState((prev) => {
+      const next = clampTimelineTime(time);
+      if (next === prev) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
+
   const addAssetToCanvas = React.useCallback<CanvasStateContextValue['addAssetToCanvas']>(
     (assetId, options = {}) => {
+      if (mode !== 'edit') {
+        return null;
+      }
+
       const libraryAsset = libraryLookup.get(assetId);
       if (!libraryAsset || libraryAsset.type === 'music') {
-        return;
+        return null;
       }
 
       const baseTransform: Transform = {
@@ -103,29 +146,34 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       const createdId = createId();
 
-      setAssets((prev) => [
-        ...prev,
-        {
-          id: createdId,
-          assetId: libraryAsset.id,
-          name: libraryAsset.name,
-          type: libraryAsset.type as Exclude<AssetType, 'music'>,
-          mediaUrl: libraryAsset.mediaUrl,
-          thumbnailUrl: libraryAsset.thumbnailUrl,
-          transform: baseTransform,
-          zIndex: prev.length + 1,
-          isLocked: false,
-          isVisible: true,
-        },
-      ]);
+      const newAsset: CanvasAsset = {
+        id: createdId,
+        assetId: libraryAsset.id,
+        name: libraryAsset.name,
+        type: libraryAsset.type as Exclude<AssetType, 'music'>,
+        mediaUrl: libraryAsset.mediaUrl,
+        thumbnailUrl: libraryAsset.thumbnailUrl,
+        transform: baseTransform,
+        zIndex: assets.length + 1,
+        isLocked: false,
+        isVisible: true,
+        timeline: options.timeline ? { ...options.timeline, clipId: options.timeline.clipId } : undefined,
+      };
 
+      setAssets((prev) => [...prev, newAsset]);
       setSelected({ kind: 'canvas', id: createdId });
+
+      return createdId;
     },
-    [libraryLookup]
+    [assets.length, libraryLookup, mode]
   );
 
   const addMusicClip = React.useCallback<CanvasStateContextValue['addMusicClip']>(
     (assetId, options = {}) => {
+      if (mode !== 'edit') {
+        return;
+      }
+
       const libraryAsset = libraryLookup.get(assetId);
       if (!libraryAsset || libraryAsset.type !== 'music') {
         return;
@@ -134,55 +182,115 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const clipId = createId();
 
       setAudioTracks((prev) => {
-        const tracks = cloneTracks(prev);
+        const tracks = cloneAudioTracks(prev);
         const duration = libraryAsset.duration ?? 120;
         const desiredTrack =
-          typeof options.trackIndex === 'number' ? options.trackIndex : tracks.findIndex(() => true);
-        const trackIndex = desiredTrack >= 0 ? desiredTrack : 0;
-        const track = tracks[trackIndex] ?? tracks[0];
+          typeof options.trackIndex === 'number' ? clamp(options.trackIndex, 0, tracks.length - 1) : 0;
+        const track = tracks[desiredTrack];
 
-        if (!track) {
+        if (!track || track.locked) {
           return prev;
         }
 
-        const start = Math.max(0, Math.min(options.start ?? 0, TIMELINE_DURATION - 1));
+        const start = clampTimelineTime(options.start ?? currentTime);
         const clip: AudioClip = {
           id: clipId,
           assetId: libraryAsset.id,
           name: libraryAsset.name,
           start,
-          duration: Math.min(duration, TIMELINE_DURATION - start),
+          duration: Math.max(1, Math.min(duration, TIMELINE_DURATION - start)),
           source: libraryAsset.mediaUrl,
           volume: 0.8,
           fadeIn: 0,
           fadeOut: 0,
         };
 
-        track.clips.push(clip);
-        tracks[trackIndex] = { ...track, clips: [...track.clips] };
+        track.clips = [...track.clips, clip];
+        tracks[desiredTrack] = { ...track };
         return tracks;
       });
 
       setSelected({ kind: 'audio', id: clipId });
     },
-    [libraryLookup]
+    [currentTime, libraryLookup, mode]
   );
 
-  const updateAssetTransform = React.useCallback<CanvasStateContextValue['updateAssetTransform']>((assetId, updates) => {
-    setAssets((prev) =>
-      prev.map((asset) =>
-        asset.id === assetId
-          ? {
-              ...asset,
-              transform: {
-                ...asset.transform,
-                ...updates,
-              },
-            }
-          : asset
-      )
-    );
-  }, []);
+  const addVisualClip = React.useCallback<CanvasStateContextValue['addVisualClip']>(
+    (assetId, options = {}) => {
+      if (mode !== 'edit') {
+        return;
+      }
+
+      const libraryAsset = libraryLookup.get(assetId);
+      if (!libraryAsset || libraryAsset.type === 'music') {
+        return;
+      }
+
+      setContentTracks((prev) => {
+        const tracks = cloneContentTracks(prev);
+        const desiredTrack =
+          typeof options.trackIndex === 'number' ? clamp(options.trackIndex, 0, tracks.length - 1) : 0;
+        const track = tracks[desiredTrack];
+
+        if (!track || track.locked) {
+          return prev;
+        }
+
+        const clipId = createId();
+        const start = clampTimelineTime(options.start ?? currentTime);
+        const estimatedDuration = libraryAsset.duration ?? 45;
+        const duration = Math.max(1, Math.min(estimatedDuration, TIMELINE_DURATION - start));
+        const timelineMeta = { start, duration, trackId: track.id, clipId };
+        const createdAssetId =
+          addAssetToCanvas(assetId, {
+            timeline: timelineMeta,
+          }) ?? null;
+
+        if (!createdAssetId) {
+          return prev;
+        }
+
+        const clip: ContentClip = {
+          id: clipId,
+          assetId: libraryAsset.id,
+          canvasAssetId: createdAssetId,
+          name: libraryAsset.name,
+          start,
+          duration,
+          type: 'image',
+          thumbnailUrl: libraryAsset.thumbnailUrl,
+        };
+
+        track.clips = [...track.clips, clip];
+        tracks[desiredTrack] = { ...track };
+        return tracks;
+      });
+    },
+    [addAssetToCanvas, currentTime, libraryLookup, mode]
+  );
+
+  const updateAssetTransform = React.useCallback<CanvasStateContextValue['updateAssetTransform']>(
+    (assetId, updates) => {
+      if (mode !== 'edit') {
+        return;
+      }
+
+      setAssets((prev) =>
+        prev.map((asset) =>
+          asset.id === assetId
+            ? {
+                ...asset,
+                transform: {
+                  ...asset.transform,
+                  ...updates,
+                },
+              }
+            : asset
+        )
+      );
+    },
+    [mode]
+  );
 
   const toggleAssetVisibility = React.useCallback<CanvasStateContextValue['toggleAssetVisibility']>((assetId) => {
     setAssets((prev) =>
@@ -211,6 +319,10 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   const reorderAssetZIndex = React.useCallback<CanvasStateContextValue['reorderAssetZIndex']>((assetId, direction) => {
+    if (mode !== 'edit') {
+      return;
+    }
+
     setAssets((prev) => {
       const next = [...prev];
       const index = next.findIndex((asset) => asset.id === assetId);
@@ -229,14 +341,21 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       return next.map((asset, idx) => ({ ...asset, zIndex: idx + 1 }));
     });
-  }, []);
+  }, [mode]);
 
   const updateAudioClip = React.useCallback<CanvasStateContextValue['updateAudioClip']>((clipId, updates) => {
+    if (mode !== 'edit') {
+      return;
+    }
+
     setAudioTracks((prev) => {
-      const tracks = cloneTracks(prev);
+      const tracks = cloneAudioTracks(prev);
 
       for (let trackIndex = 0; trackIndex < tracks.length; trackIndex += 1) {
         const track = tracks[trackIndex];
+        if (track.locked) {
+          continue;
+        }
         const clipIndex = track.clips.findIndex((clip) => clip.id === clipId);
         if (clipIndex !== -1) {
           const clip = track.clips[clipIndex];
@@ -245,44 +364,190 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
             ...updates,
           };
 
-          nextClip.start = Math.max(0, Math.min(nextClip.start, TIMELINE_DURATION - 1));
+          nextClip.start = clampTimelineTime(nextClip.start);
+          nextClip.duration = clampTimelineTime(nextClip.duration);
           nextClip.duration = Math.max(1, Math.min(nextClip.duration, TIMELINE_DURATION - nextClip.start));
 
-          track.clips[clipIndex] = nextClip;
-          tracks[trackIndex] = { ...track, clips: [...track.clips] };
+          track.clips = track.clips.map((item, index) => (index === clipIndex ? nextClip : item));
+          tracks[trackIndex] = { ...track };
           return tracks;
         }
       }
 
       return prev;
     });
+  }, [mode]);
+
+  const updateContentClip = React.useCallback<CanvasStateContextValue['updateContentClip']>((clipId, updates) => {
+    if (mode !== 'edit') {
+      return;
+    }
+
+    let assetUpdate: { assetId: string; start: number; duration: number; trackId: string } | null = null;
+
+    setContentTracks((prev) => {
+      const tracks = cloneContentTracks(prev);
+
+      for (let trackIndex = 0; trackIndex < tracks.length; trackIndex += 1) {
+        const track = tracks[trackIndex];
+        if (track.locked) {
+          continue;
+        }
+        const clipIndex = track.clips.findIndex((clip) => clip.id === clipId);
+        if (clipIndex !== -1) {
+          const clip = track.clips[clipIndex];
+          const nextClip: ContentClip = {
+            ...clip,
+            ...updates,
+          };
+
+          nextClip.start = clampTimelineTime(nextClip.start);
+          nextClip.duration = Math.max(1, Math.min(nextClip.duration, TIMELINE_DURATION - nextClip.start));
+
+          track.clips = track.clips.map((item, index) => (index === clipIndex ? nextClip : item));
+          tracks[trackIndex] = { ...track };
+
+          assetUpdate = {
+            assetId: nextClip.canvasAssetId,
+            start: nextClip.start,
+            duration: nextClip.duration,
+            trackId: track.id,
+          };
+          return tracks;
+        }
+      }
+
+      return prev;
+    });
+
+    if (assetUpdate) {
+      setAssets((prev) =>
+        prev.map((asset) =>
+          asset.id === assetUpdate?.assetId
+            ? {
+                ...asset,
+                timeline: asset.timeline
+                  ? {
+                      ...asset.timeline,
+                      start: assetUpdate.start,
+                      duration: assetUpdate.duration,
+                      trackId: assetUpdate.trackId,
+                    }
+                  : {
+                      start: assetUpdate.start,
+                      duration: assetUpdate.duration,
+                      trackId: assetUpdate.trackId,
+                      clipId: clipId,
+                    },
+              }
+            : asset
+        )
+      );
+    }
+  }, [mode]);
+
+  const toggleContentTrackLock = React.useCallback<CanvasStateContextValue['toggleContentTrackLock']>((trackId) => {
+    setContentTracks((prev) =>
+      prev.map((track) =>
+        track.id === trackId
+          ? {
+              ...track,
+              locked: !track.locked,
+            }
+          : track
+      )
+    );
+  }, []);
+
+  const toggleContentTrackVisibility = React.useCallback<CanvasStateContextValue['toggleContentTrackVisibility']>((trackId) => {
+    setContentTracks((prev) =>
+      prev.map((track) =>
+        track.id === trackId
+          ? {
+              ...track,
+              hidden: !track.hidden,
+            }
+          : track
+      )
+    );
+  }, []);
+
+  const toggleAudioTrackMute = React.useCallback<CanvasStateContextValue['toggleAudioTrackMute']>((trackId) => {
+    setAudioTracks((prev) =>
+      prev.map((track) =>
+        track.id === trackId
+          ? {
+              ...track,
+              muted: !track.muted,
+            }
+          : track
+      )
+    );
+  }, []);
+
+  const toggleAudioTrackSolo = React.useCallback<CanvasStateContextValue['toggleAudioTrackSolo']>((trackId) => {
+    setAudioTracks((prev) =>
+      prev.map((track) =>
+        track.id === trackId
+          ? {
+              ...track,
+              solo: !track.solo,
+            }
+          : track
+      )
+    );
+  }, []);
+
+  const toggleAudioTrackLock = React.useCallback<CanvasStateContextValue['toggleAudioTrackLock']>((trackId) => {
+    setAudioTracks((prev) =>
+      prev.map((track) =>
+        track.id === trackId
+          ? {
+              ...track,
+              locked: !track.locked,
+            }
+          : track
+      )
+    );
   }, []);
 
   const removeEntity = React.useCallback<CanvasStateContextValue['removeEntity']>((entity) => {
-    if (!entity) {
+    if (!entity || mode !== 'edit') {
       return;
     }
 
     if (entity.kind === 'canvas') {
-      setAssets((prev) => prev.filter((asset) => asset.id !== entity.id));
-    } else if (entity.kind === 'audio') {
-      setAudioTracks((prev) => {
-        const tracks = cloneTracks(prev);
-        for (let trackIndex = 0; trackIndex < tracks.length; trackIndex += 1) {
-          const track = tracks[trackIndex];
-          const nextClips = track.clips.filter((clip) => clip.id !== entity.id);
-          tracks[trackIndex] = { ...track, clips: nextClips };
-        }
-        return tracks;
+      let clipIdToRemove: string | null = null;
+      setAssets((prev) => {
+        const target = prev.find((asset) => asset.id === entity.id);
+        clipIdToRemove = target?.timeline?.clipId ?? null;
+        return prev.filter((asset) => asset.id !== entity.id);
       });
+
+      if (clipIdToRemove) {
+        const removeId = clipIdToRemove;
+        setContentTracks((prev) =>
+          prev.map((track) => ({
+            ...track,
+            clips: track.clips.filter((clip) => clip.id !== removeId),
+          }))
+        );
+      }
+    } else if (entity.kind === 'audio') {
+      setAudioTracks((prev) =>
+        prev.map((track) => ({
+          ...track,
+          clips: track.clips.filter((clip) => clip.id !== entity.id),
+        }))
+      );
     }
 
     setSelected(null);
-  }, []);
+  }, [mode]);
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selected) {
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selected && mode === 'edit') {
         event.preventDefault();
         removeEntity(selected);
       }
@@ -290,38 +555,112 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [removeEntity, selected]);
+  }, [removeEntity, selected, mode]);
+
+  React.useEffect(() => {
+    if (!isPlaying) {
+      return undefined;
+    }
+
+    let frameId: number;
+    let last = performance.now();
+
+    const step = (now: number) => {
+      const delta = (now - last) / 1000;
+      last = now;
+      setCurrentTimeState((prev) => {
+        const next = clampTimelineTime(prev + delta);
+        if (next >= TIMELINE_DURATION) {
+          setIsPlaying(false);
+          return TIMELINE_DURATION;
+        }
+        return next;
+      });
+      frameId = requestAnimationFrame(step);
+    };
+
+    frameId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frameId);
+  }, [isPlaying]);
+
+  React.useEffect(() => {
+    if (mode === 'edit' && isPlaying) {
+      setIsPlaying(false);
+    }
+  }, [mode, isPlaying]);
+
+  const play = React.useCallback(() => {
+    if (currentTime >= TIMELINE_DURATION) {
+      setCurrentTimeState(0);
+    }
+    setMode('play');
+    setIsPlaying(true);
+  }, [currentTime]);
+
+  const pause = React.useCallback(() => {
+    setIsPlaying(false);
+  }, []);
 
   const value = React.useMemo<CanvasStateContextValue>(
     () => ({
       assets,
       audioTracks,
+      contentTracks,
       libraryAssets: LIBRARY_ASSETS,
       selected,
       selectEntity,
       addAssetToCanvas,
       addMusicClip,
+      addVisualClip,
       updateAssetTransform,
       toggleAssetVisibility,
       toggleAssetLock,
       removeEntity,
       reorderAssetZIndex,
       updateAudioClip,
+      updateContentClip,
+      toggleContentTrackLock,
+      toggleContentTrackVisibility,
+      toggleAudioTrackMute,
+      toggleAudioTrackSolo,
+      toggleAudioTrackLock,
       timelineDuration: TIMELINE_DURATION,
+      currentTime,
+      setCurrentTime,
+      mode,
+      setMode,
+      isPlaying,
+      play,
+      pause,
     }),
     [
       assets,
       audioTracks,
+      contentTracks,
       selected,
       selectEntity,
       addAssetToCanvas,
       addMusicClip,
+      addVisualClip,
       updateAssetTransform,
       toggleAssetVisibility,
       toggleAssetLock,
       removeEntity,
       reorderAssetZIndex,
       updateAudioClip,
+      updateContentClip,
+      toggleContentTrackLock,
+      toggleContentTrackVisibility,
+      toggleAudioTrackMute,
+      toggleAudioTrackSolo,
+      toggleAudioTrackLock,
+      currentTime,
+      setCurrentTime,
+      mode,
+      setMode,
+      isPlaying,
+      play,
+      pause,
     ]
   );
 
@@ -335,10 +674,3 @@ export const useCanvasState = (): CanvasStateContextValue => {
   }
   return context;
 };
-
-export const useLibraryAsset = (assetId: string): LibraryAsset | undefined => {
-  const { libraryAssets } = useCanvasState();
-  return React.useMemo(() => libraryAssets.find((asset) => asset.id === assetId), [libraryAssets, assetId]);
-};
-
-export { ASSET_DRAG_TYPE };
