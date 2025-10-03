@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  TIMELINE_TRACKS,
   SelectToolIcon,
   RazorToolIcon,
   TextIcon,
@@ -12,11 +11,13 @@ import {
   PlusIcon,
   MagnetIcon,
   LinkIcon,
-  EyeIcon,
-  LockIcon,
   MicIcon,
+  ASSET_DRAG_TYPE,
 } from '../constants';
-import type { Track, Clip } from '../types';
+import { useCanvasState } from '../context/CanvasStateContext';
+import type { AudioClip, AudioTrack } from '../types';
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 const createSeededRandom = (seedString: string) => {
   let seed = 0;
@@ -33,62 +34,14 @@ const createSeededRandom = (seedString: string) => {
 const AudioWaveform: React.FC<{ seed: string }> = ({ seed }) => {
   const bars = React.useMemo(() => {
     const random = createSeededRandom(seed);
-    return Array.from({ length: 150 }, () => random() * 0.8 + 0.2);
+    return Array.from({ length: 90 }, () => random() * 0.8 + 0.2);
   }, [seed]);
 
   return (
     <div className="flex items-center h-full w-full">
-      {bars.map((height, i) => (
-        <div key={i} className="w-px bg-green-400" style={{ height: `${height * 100}%` }} />
+      {bars.map((height, index) => (
+        <div key={index} className="w-px bg-green-400" style={{ height: `${height * 100}%` }} />
       ))}
-    </div>
-  );
-};
-
-const VideoThumbnails: React.FC = () => (
-  <div className="flex h-full w-full overflow-hidden">
-    {Array.from({ length: 10 }).map((_, i) => (
-      <img
-        key={i}
-        src={`https://picsum.photos/100/50?random=${i + 20}`}
-        className="h-full w-auto"
-        alt="video thumbnail"
-      />
-    ))}
-  </div>
-);
-
-type TimelineClipProps = {
-  clip: Clip;
-  timelineDuration: number;
-  isDragging: boolean;
-  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
-};
-
-const TimelineClip: React.FC<TimelineClipProps> = ({
-  clip,
-  timelineDuration,
-  isDragging,
-  onPointerDown,
-}) => {
-  const left = (clip.start / timelineDuration) * 100;
-  const width = (clip.duration / timelineDuration) * 100;
-
-  return (
-    <div
-      onPointerDown={onPointerDown}
-      role="button"
-      tabIndex={0}
-      className={`absolute h-full flex items-center rounded-md overflow-hidden border border-black/30 cursor-grab active:cursor-grabbing transition-[box-shadow,transform] ${
-        clip.type === 'video' ? 'bg-purple-600' : 'bg-green-600'
-      } ${isDragging ? 'ring-2 ring-blue-400 shadow-lg scale-[1.01]' : ''}`}
-      style={{ left: `${left}%`, width: `${width}%`, height: '80%' }}
-    >
-      <div className="w-1 h-full bg-white/20" />
-      <div className="w-full h-full opacity-80 flex-1">
-        {clip.type === 'video' ? <VideoThumbnails /> : <AudioWaveform seed={clip.id} />}
-      </div>
-      <div className="w-1 h-full bg-white/20" />
     </div>
   );
 };
@@ -142,99 +95,97 @@ const TimelineTools: React.FC = () => (
   </div>
 );
 
-const TrackHeader: React.FC<{ track: Track }> = ({ track }) => {
-  const isVideo = track.type === 'video';
+const findClip = (tracks: AudioTrack[], clipId: string) => {
+  for (const track of tracks) {
+    const clip = track.clips.find((item) => item.id === clipId);
+    if (clip) {
+      return clip;
+    }
+  }
+  return null;
+};
+
+const TimelineClip: React.FC<{
+  clip: AudioClip;
+  timelineDuration: number;
+  isSelected: boolean;
+  isDragging: boolean;
+  onBodyPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onResizeStart: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onResizeEnd: (event: React.PointerEvent<HTMLDivElement>) => void;
+}> = ({ clip, timelineDuration, isSelected, isDragging, onBodyPointerDown, onResizeStart, onResizeEnd }) => {
+  const left = (clip.start / timelineDuration) * 100;
+  const width = (clip.duration / timelineDuration) * 100;
+
   return (
-    <div className="h-16 flex items-center px-2 border-b border-zinc-800 space-x-2">
-      <div className="flex-1 flex flex-col justify-center">
-        <span className="font-bold text-sm">{track.id}</span>
+    <div
+      className={`absolute h-full flex items-center rounded-md overflow-hidden border border-black/40 transition-[box-shadow,transform] ${
+        isSelected ? 'ring-2 ring-blue-400' : ''
+      } ${isDragging ? 'shadow-xl scale-[1.01]' : ''}`}
+      style={{ left: `${left}%`, width: `${width}%`, height: '80%' }}
+    >
+      <div
+        role="presentation"
+        className="w-1.5 h-full bg-white/30 cursor-ew-resize"
+        onPointerDown={onResizeStart}
+      />
+      <div
+        role="button"
+        tabIndex={0}
+        onPointerDown={onBodyPointerDown}
+        className="flex-1 h-full bg-green-600/80 cursor-grab active:cursor-grabbing"
+      >
+        <div className="h-full w-full">
+          <AudioWaveform seed={clip.id} />
+        </div>
+        <div className="absolute bottom-1 left-2 right-2 text-xs text-white font-semibold truncate pointer-events-none">
+          {clip.name}
+        </div>
       </div>
-      {isVideo ? (
-        <>
-          <button className="p-1 text-gray-400 hover:text-white">
-            <EyeIcon className="w-5 h-5" />
-          </button>
-          <button
-            className={`p-1 ${track.locked ? 'text-blue-400' : 'text-gray-400'} hover:text-white`}
-          >
-            <LockIcon className="w-5 h-5" />
-          </button>
-        </>
-      ) : (
-        <>
-          <button
-            className={`p-1 rounded w-6 h-6 text-xs font-bold ${
-              track.muted ? 'bg-yellow-500 text-black' : 'bg-zinc-600 text-gray-300'
-            } hover:bg-yellow-400`}
-          >
-            M
-          </button>
-          <button
-            className={`p-1 rounded w-6 h-6 text-xs font-bold ${
-              track.solo ? 'bg-green-500 text-black' : 'bg-zinc-600 text-gray-300'
-            } hover:bg-green-400`}
-          >
-            S
-          </button>
-          <button className="p-1 text-gray-400 hover:text-red-500">
-            <MicIcon className="w-5 h-5" />
-          </button>
-        </>
-      )}
+      <div
+        role="presentation"
+        className="w-1.5 h-full bg-white/30 cursor-ew-resize"
+        onPointerDown={onResizeEnd}
+      />
     </div>
   );
 };
 
-type TimelineProps = {
-  height: number;
-};
+const TrackHeader: React.FC<{ track: AudioTrack }> = ({ track }) => (
+  <div className="h-16 flex items-center px-2 border-b border-zinc-800 space-x-2">
+    <div className="flex-1 flex flex-col justify-center">
+      <span className="font-bold text-sm">{track.id}</span>
+      <span className="text-xs text-gray-500">Audio track</span>
+    </div>
+    <button className={`p-1 rounded w-6 h-6 text-xs font-bold ${track.muted ? 'bg-yellow-500 text-black' : 'bg-zinc-600 text-gray-300'}`}>
+      M
+    </button>
+    <button className={`p-1 rounded w-6 h-6 text-xs font-bold ${track.solo ? 'bg-green-500 text-black' : 'bg-zinc-600 text-gray-300'}`}>
+      S
+    </button>
+    <button className="p-1 text-gray-400 hover:text-red-500">
+      <MicIcon className="w-5 h-5" />
+    </button>
+  </div>
+);
 
-const Timeline: React.FC<TimelineProps> = ({ height }) => {
-  const duration = 300; // 5 minutes
-  const markers = React.useMemo(
-    () => Array.from({ length: Math.floor(duration / 15) + 1 }, (_, i) => i * 15),
-    [duration]
-  );
-  const [tracks, setTracks] = React.useState<Track[]>(() =>
-    TIMELINE_TRACKS.map(track => ({
-      ...track,
-      clips: track.clips.map(clip => ({ ...clip })),
-    }))
-  );
-  const [dragState, setDragState] = React.useState<{
-    trackIndex: number;
-    clipIndex: number;
-    pointerId: number;
-    offset: number;
-    clipId: string;
-  } | null>(null);
+const clampTime = (value: number, duration: number) => clamp(value, 0, duration);
+
+const usePointerDrag = (
+  timelineDuration: number,
+  audioTracks: AudioTrack[],
+  updateAudioClip: (clipId: string, updates: Partial<AudioClip>) => void
+) => {
   const timelineContentRef = React.useRef<HTMLDivElement>(null);
-  const getVolumeLevel = React.useMemo(() => {
-    const cache = new Map<string, number>();
-    return (trackId: string) => {
-      if (!cache.has(trackId)) {
-        let hash = 0;
-        for (let i = 0; i < trackId.length; i += 1) {
-          hash = (hash << 5) - hash + trackId.charCodeAt(i);
-          hash |= 0;
-        }
-        const normalized = Math.abs(hash % 61) + 20;
-        cache.set(trackId, normalized);
+  const [dragState, setDragState] = React.useState<
+    | {
+        mode: 'move' | 'resize-start' | 'resize-end';
+        clipId: string;
+        pointerId: number;
+        offset: number;
       }
-      return cache.get(trackId)!;
-    };
-  }, []);
-
-  const getTimeFromClientX = React.useCallback(
-    (clientX: number) => {
-      const rect = timelineContentRef.current?.getBoundingClientRect();
-      if (!rect) return 0;
-      const position = Math.min(Math.max(clientX - rect.left, 0), rect.width);
-      const ratio = rect.width === 0 ? 0 : position / rect.width;
-      return ratio * duration;
-    },
-    [duration]
-  );
+    | null
+  >(null);
 
   React.useEffect(() => {
     if (!dragState) {
@@ -245,34 +196,30 @@ const Timeline: React.FC<TimelineProps> = ({ height }) => {
       if (event.pointerId !== dragState.pointerId) {
         return;
       }
+      const trackClip = findClip(audioTracks, dragState.clipId);
+      if (!trackClip) {
+        return;
+      }
+      const timelineRect = timelineContentRef.current?.getBoundingClientRect();
+      if (!timelineRect) {
+        return;
+      }
+      const ratio = timelineRect.width === 0 ? 0 : clamp((event.clientX - timelineRect.left) / timelineRect.width, 0, 1);
+      const pointerTime = ratio * timelineDuration;
 
-      setTracks(prev => {
-        const track = prev[dragState.trackIndex];
-        if (!track) {
-          return prev;
-        }
-        const clip = track.clips[dragState.clipIndex];
-        if (!clip) {
-          return prev;
-        }
-
-        const pointerTime = getTimeFromClientX(event.clientX);
-        const newStart = Math.min(
-          Math.max(pointerTime - dragState.offset, 0),
-          duration - clip.duration
-        );
-
-        const updatedTrack: Track = {
-          ...track,
-          clips: track.clips.map((existingClip, index) =>
-            index === dragState.clipIndex ? { ...existingClip, start: newStart } : existingClip
-          ),
-        };
-
-        const updatedTracks = [...prev];
-        updatedTracks[dragState.trackIndex] = updatedTrack;
-        return updatedTracks;
-      });
+      if (dragState.mode === 'move') {
+        const newStart = clampTime(pointerTime - dragState.offset, timelineDuration - trackClip.duration);
+        updateAudioClip(trackClip.id, { start: newStart });
+      } else if (dragState.mode === 'resize-start') {
+        const endTime = trackClip.start + trackClip.duration;
+        const newStart = clamp(pointerTime, 0, endTime - 1);
+        const newDuration = clamp(endTime - newStart, 1, timelineDuration - newStart);
+        updateAudioClip(trackClip.id, { start: newStart, duration: newDuration });
+      } else if (dragState.mode === 'resize-end') {
+        const newEnd = clamp(pointerTime, trackClip.start + 1, timelineDuration);
+        const newDuration = clamp(newEnd - trackClip.start, 1, timelineDuration - trackClip.start);
+        updateAudioClip(trackClip.id, { duration: newDuration });
+      }
     };
 
     const handlePointerUp = (event: PointerEvent) => {
@@ -283,52 +230,113 @@ const Timeline: React.FC<TimelineProps> = ({ height }) => {
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
-
     return () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [dragState, duration, getTimeFromClientX]);
+  }, [audioTracks, dragState, timelineDuration, updateAudioClip]);
 
-  const handleClipPointerDown = (
-    event: React.PointerEvent<HTMLDivElement>,
-    trackIndex: number,
-    clipIndex: number
-  ) => {
-    const clip = tracks[trackIndex]?.clips[clipIndex];
-    if (!clip) {
-      return;
+  return { dragState, setDragState, timelineContentRef };
+};
+
+const Timeline: React.FC<{ height: number }> = ({ height }) => {
+  const {
+    audioTracks,
+    addMusicClip,
+    updateAudioClip,
+    selectEntity,
+    selected,
+    timelineDuration,
+  } = useCanvasState();
+  const { dragState, setDragState, timelineContentRef } = usePointerDrag(
+    timelineDuration,
+    audioTracks,
+    updateAudioClip
+  );
+  const selectedClipId = selected?.kind === 'audio' ? selected.id : null;
+
+  const getTimeFromClientX = React.useCallback(
+    (clientX: number) => {
+      const rect = timelineContentRef.current?.getBoundingClientRect();
+      if (!rect) {
+        return 0;
+      }
+      const position = clamp(clientX - rect.left, 0, rect.width);
+      return rect.width === 0 ? 0 : (position / rect.width) * timelineDuration;
+    },
+    [timelineContentRef, timelineDuration]
+  );
+
+  const handleClipPointerDown = React.useCallback(
+    (clip: AudioClip) => (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const pointerTime = getTimeFromClientX(event.clientX);
+      const offset = pointerTime - clip.start;
+      setDragState({ mode: 'move', clipId: clip.id, pointerId: event.pointerId, offset });
+      selectEntity({ kind: 'audio', id: clip.id });
+    },
+    [getTimeFromClientX, selectEntity, setDragState]
+  );
+
+  const handleResize = React.useCallback(
+    (clip: AudioClip, mode: 'resize-start' | 'resize-end') =>
+      (event: React.PointerEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        setDragState({ mode, clipId: clip.id, pointerId: event.pointerId, offset: 0 });
+        selectEntity({ kind: 'audio', id: clip.id });
+      },
+    [selectEntity, setDragState]
+  );
+
+  const handleTrackDrop = React.useCallback(
+    (trackIndex: number) => (event: React.DragEvent<HTMLDivElement>) => {
+      if (!event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) {
+        return;
+      }
+      event.preventDefault();
+      try {
+        const payload = JSON.parse(event.dataTransfer.getData(ASSET_DRAG_TYPE)) as {
+          assetId: string;
+          type: string;
+        };
+        if (payload.type !== 'music') {
+          return;
+        }
+        const start = getTimeFromClientX(event.clientX);
+        addMusicClip(payload.assetId, { start, trackIndex });
+      } catch (error) {
+        // ignore invalid payloads
+      }
+    },
+    [addMusicClip, getTimeFromClientX]
+  );
+
+  const handleDragOver = React.useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
     }
+  }, []);
 
-    event.preventDefault();
-    const pointerTime = getTimeFromClientX(event.clientX);
-    setDragState({
-      trackIndex,
-      clipIndex,
-      pointerId: event.pointerId,
-      offset: pointerTime - clip.start,
-      clipId: clip.id,
-    });
-  };
+  const markers = React.useMemo(
+    () => Array.from({ length: Math.floor(timelineDuration / 15) + 1 }, (_, index) => index * 15),
+    [timelineDuration]
+  );
 
   return (
-    <footer
-      className="bg-[#252526] border-t border-zinc-700 flex flex-col flex-shrink-0"
-      style={{ height }}
-    >
+    <footer className="bg-[#252526] border-t border-zinc-700 flex flex-col flex-shrink-0" style={{ height }}>
       <TimelineToolbar />
       <div className="flex flex-1 min-h-0">
         <TimelineTools />
         <div className="flex-1 overflow-auto relative" id="timeline-scroll-container">
           <div className="relative h-full" style={{ width: '200%' }} ref={timelineContentRef}>
-            {/* Ruler */}
             <div className="h-8 flex sticky top-0 z-20 bg-[#252526]">
               <div className="w-48 flex-shrink-0 sticky left-0 z-10 bg-[#252526] border-r border-b border-zinc-700 flex items-center justify-start p-2">
                 <span className="text-xs text-gray-400">00:00:00:00</span>
               </div>
               <div className="flex-1 border-b border-zinc-700 relative">
-                {markers.map(time => {
-                  const percentage = (time / duration) * 100;
+                {markers.map((time) => {
+                  const percentage = (time / timelineDuration) * 100;
                   return (
                     <div
                       key={time}
@@ -345,56 +353,51 @@ const Timeline: React.FC<TimelineProps> = ({ height }) => {
               </div>
             </div>
 
-            {/* Tracks */}
             <div className="flex w-full">
-              {/* Track Headers */}
               <div className="w-48 flex-shrink-0 sticky left-0 z-10 bg-[#252526] border-r border-zinc-700">
-                {tracks.map(track => (
+                {audioTracks.map((track) => (
                   <TrackHeader key={track.id} track={track} />
                 ))}
               </div>
-              {/* Track Clips */}
               <div className="flex-1 relative">
-                {tracks.map((track, trackIndex) => (
-                  <div key={track.id} className="relative h-16 border-b border-zinc-800">
-                    {track.clips.map((clip, clipIndex) => (
+                {audioTracks.map((track, trackIndex) => (
+                  <div
+                    key={track.id}
+                    className="relative h-16 border-b border-zinc-800"
+                    onDragOver={handleDragOver}
+                    onDrop={handleTrackDrop(trackIndex)}
+                  >
+                    {track.clips.map((clip) => (
                       <TimelineClip
                         key={clip.id}
                         clip={clip}
-                        timelineDuration={duration}
-                        isDragging={
-                          dragState?.clipId === clip.id &&
-                          dragState.trackIndex === trackIndex &&
-                          dragState.clipIndex === clipIndex
-                        }
-                        onPointerDown={event => handleClipPointerDown(event, trackIndex, clipIndex)}
+                        timelineDuration={timelineDuration}
+                        isSelected={selectedClipId === clip.id}
+                        isDragging={dragState?.clipId === clip.id}
+                        onBodyPointerDown={handleClipPointerDown(clip)}
+                        onResizeStart={handleResize(clip, 'resize-start')}
+                        onResizeEnd={handleResize(clip, 'resize-end')}
                       />
                     ))}
+                    {track.clips.length === 0 && (
+                      <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500 uppercase tracking-wide pointer-events-none">
+                        Drop music here
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* Playhead */}
-            <div
-              className="absolute top-0 h-full w-0.5 bg-red-500 z-30 pointer-events-none"
-              style={{ left: 'calc(12rem + 10%)' }}
-            >
-              <div className="w-3 h-3 bg-red-500 rounded-full -translate-x-1/2 -translate-y-1/2 absolute top-4 left-1/2 ring-4 ring-[#252526]" />
-            </div>
           </div>
         </div>
 
-        {/* Volume Sliders */}
         <div className="w-16 border-l border-zinc-700 flex flex-col flex-shrink-0">
           <div className="h-8 border-b border-zinc-700" />
-          {tracks.map(track => (
+          {audioTracks.map((track) => (
             <div key={track.id} className="h-16 border-b border-zinc-800 flex items-center justify-center p-2">
-              {track.type === 'audio' && (
-                <div className="w-2 h-full bg-zinc-700 rounded-full overflow-hidden">
-                  <div className="bg-green-500 w-full" style={{ height: `${getVolumeLevel(track.id)}%` }} />
-                </div>
-              )}
+              <div className="w-2 h-full bg-zinc-700 rounded-full overflow-hidden">
+                <div className="bg-green-500 w-full" style={{ height: `${track.clips.length > 0 ? 60 : 10}%` }} />
+              </div>
             </div>
           ))}
         </div>

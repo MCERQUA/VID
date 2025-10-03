@@ -5,6 +5,7 @@ import LeftSidebar from './components/LeftSidebar';
 import CenterPanel from './components/CenterPanel';
 import RightSidebar from './components/RightSidebar';
 import Timeline from './components/Timeline';
+import { CanvasStateProvider } from './context/CanvasStateContext';
 
 const MIN_PANEL_WIDTH = 220;
 const MAX_PANEL_WIDTH = 420;
@@ -220,80 +221,82 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <div ref={containerRef} className="flex flex-col h-screen bg-[#1e1e1e] text-gray-300 font-sans overflow-hidden">
-      <Header
-        isMobile={isMobile}
-        onToggleLeft={handleToggleLeft}
-        onToggleRight={handleToggleRight}
-        leftOpen={leftOpen}
-        rightOpen={rightOpen}
-      />
-      <div className="flex flex-col flex-1 min-h-0">
-        <div className="flex flex-1 min-h-0 relative">
-          {!isMobile && leftOpen && (
-            <div className="h-full flex-shrink-0" style={{ width: leftPanelWidth }}>
-              <LeftSidebar />
-            </div>
-          )}
-          {!isMobile && leftOpen && (
-            <div
-              className="w-1 cursor-col-resize flex-shrink-0 relative group"
-              onPointerDown={startDragging('left')}
-            >
-              <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
-            </div>
-          )}
+    <CanvasStateProvider>
+      <div ref={containerRef} className="flex flex-col h-screen bg-[#1e1e1e] text-gray-300 font-sans overflow-hidden">
+        <Header
+          isMobile={isMobile}
+          onToggleLeft={handleToggleLeft}
+          onToggleRight={handleToggleRight}
+          leftOpen={leftOpen}
+          rightOpen={rightOpen}
+        />
+        <div className="flex flex-col flex-1 min-h-0">
+          <div className="flex flex-1 min-h-0 relative">
+            {!isMobile && leftOpen && (
+              <div className="h-full flex-shrink-0" style={{ width: leftPanelWidth }}>
+                <LeftSidebar />
+              </div>
+            )}
+            {!isMobile && leftOpen && (
+              <div
+                className="w-1 cursor-col-resize flex-shrink-0 relative group"
+                onPointerDown={startDragging('left')}
+              >
+                <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
+              </div>
+            )}
 
-          <CenterPanel />
+            <CenterPanel />
 
-          {!isMobile && rightOpen && (
-            <div
-              className="w-1 cursor-col-resize flex-shrink-0 relative group"
-              onPointerDown={startDragging('right')}
-            >
-              <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
-            </div>
-          )}
-          {!isMobile && rightOpen && (
-            <div className="h-full flex-shrink-0" style={{ width: rightPanelWidth }}>
-              <RightSidebar />
-            </div>
-          )}
+            {!isMobile && rightOpen && (
+              <div
+                className="w-1 cursor-col-resize flex-shrink-0 relative group"
+                onPointerDown={startDragging('right')}
+              >
+                <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
+              </div>
+            )}
+            {!isMobile && rightOpen && (
+              <div className="h-full flex-shrink-0" style={{ width: rightPanelWidth }}>
+                <RightSidebar />
+              </div>
+            )}
 
-          {isMobile && leftOpen && (
-            <LeftSidebar isMobile onClose={() => setLeftOpen(false)} className="lg:hidden" />
-          )}
-          {isMobile && rightOpen && (
-            <RightSidebar isMobile onClose={() => setRightOpen(false)} className="lg:hidden" />
-          )}
-          {isMobile && (
-            <>
-              <MobilePanelToggle side="left" isOpen={leftOpen} onToggle={handleToggleLeft} />
-              <MobilePanelToggle side="right" isOpen={rightOpen} onToggle={handleToggleRight} />
-            </>
-          )}
-          {isMobile && (leftOpen || rightOpen) && (
-            <button
-              type="button"
-              aria-label="Close panels"
-              className="fixed inset-x-0 top-14 bottom-0 bg-black/40 z-30"
-              onClick={closePanels}
-            />
-          )}
+            {isMobile && leftOpen && (
+              <LeftSidebar isMobile onClose={() => setLeftOpen(false)} className="lg:hidden" />
+            )}
+            {isMobile && rightOpen && (
+              <RightSidebar isMobile onClose={() => setRightOpen(false)} className="lg:hidden" />
+            )}
+            {isMobile && (
+              <>
+                <MobilePanelToggle side="left" isOpen={leftOpen} onToggle={handleToggleLeft} />
+                <MobilePanelToggle side="right" isOpen={rightOpen} onToggle={handleToggleRight} />
+              </>
+            )}
+            {isMobile && (leftOpen || rightOpen) && (
+              <button
+                type="button"
+                aria-label="Close panels"
+                className="fixed inset-x-0 top-14 bottom-0 bg-black/40 z-30"
+                onClick={closePanels}
+              />
+            )}
+          </div>
+
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Resize timeline"
+            className="h-2 cursor-row-resize flex-shrink-0 relative group"
+            onPointerDown={startTimelineResize}
+          >
+            <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-0.5 bg-zinc-700 rounded group-hover:bg-blue-400 transition-colors" />
+          </div>
+          <Timeline height={timelineHeight} />
         </div>
-
-        <div
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Resize timeline"
-          className="h-2 cursor-row-resize flex-shrink-0 relative group"
-          onPointerDown={startTimelineResize}
-        >
-          <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-0.5 bg-zinc-700 rounded group-hover:bg-blue-400 transition-colors" />
-        </div>
-        <Timeline height={timelineHeight} />
       </div>
-    </div>
+    </CanvasStateProvider>
   );
 };
 
