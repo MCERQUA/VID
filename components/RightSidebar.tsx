@@ -2,6 +2,13 @@
 import React, { useState } from 'react';
 import { PROPERTIES_TABS, PropertyGroup } from '../constants';
 
+type RightSidebarProps = {
+  isMobile?: boolean;
+  onClose?: () => void;
+  className?: string;
+  style?: React.CSSProperties;
+};
+
 const Accordion: React.FC<{ title: string; children: React.ReactNode; defaultOpen?: boolean }> = ({ title, children, defaultOpen = false }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   return (
@@ -26,9 +33,9 @@ const PropertyInput: React.FC<{ label: string; value: string; isLinked?: boolean
   </div>
 );
 
-const RightSidebar: React.FC = () => {
+const RightSidebar: React.FC<RightSidebarProps> = ({ isMobile = false, onClose, className = '', style }) => {
   const [activeTab, setActiveTab] = useState('Properties');
-  
+
   const renderPanelContent = () => {
     switch (activeTab) {
       case 'Properties':
@@ -56,18 +63,31 @@ const RightSidebar: React.FC = () => {
     }
   };
 
+  const containerClasses = `${isMobile ? 'fixed top-14 bottom-0 right-0 z-40 w-80 max-w-[85vw] shadow-2xl lg:hidden' : 'h-full flex-shrink-0'} bg-[#252526] border-l border-zinc-700 flex flex-col ${className}`.trim();
+
   return (
-    <aside className="w-[320px] bg-[#252526] flex-shrink-0 border-l border-zinc-700 flex flex-col">
-      <div className="flex border-b border-zinc-700">
-        {PROPERTIES_TABS.map(tab => (
-          <button 
-            key={tab} 
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium flex-1 ${activeTab === tab ? 'text-white border-b-2 border-blue-500' : 'text-gray-400 hover:bg-zinc-700/50'}`}
+    <aside className={containerClasses} style={style}>
+      <div className="flex items-center border-b border-zinc-700">
+        <div className="flex flex-1">
+          {PROPERTIES_TABS.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 text-sm font-medium flex-1 ${activeTab === tab ? 'text-white border-b-2 border-blue-500' : 'text-gray-400 hover:bg-zinc-700/50'}`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+        {isMobile && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1 text-xs font-medium text-gray-300 bg-zinc-800 rounded-l hover:bg-zinc-700"
           >
-            {tab}
+            Close
           </button>
-        ))}
+        )}
       </div>
       <div className="flex-1 overflow-y-auto">
         {renderPanelContent()}
