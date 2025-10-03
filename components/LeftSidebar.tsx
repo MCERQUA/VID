@@ -39,11 +39,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({ isMobile = false, onClose, cl
             </button>
           )}
         </div>
-        <div className="flex items-center space-x-2 overflow-x-auto scrollbar-hide">
+        <div className="flex flex-col space-y-1">
           {ASSET_CATEGORIES.map((cat) => (
-            <button key={cat.name} className="flex flex-col items-center p-2 rounded-md hover:bg-zinc-700 space-y-1 w-16 flex-shrink-0">
-              <cat.icon className="w-6 h-6" />
-              <span className="text-xs">{cat.name}</span>
+            <button
+              key={cat.name}
+              className="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-zinc-700 transition-colors text-left"
+            >
+              <cat.icon className="w-5 h-5" />
+              <span className="text-sm font-medium">{cat.name}</span>
             </button>
           ))}
         </div>
