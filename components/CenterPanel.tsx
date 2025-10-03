@@ -56,6 +56,7 @@ const CanvasAssetLayer: React.FC<{
     transform: `rotate(${asset.transform.rotation}deg)`,
     opacity: asset.transform.opacity,
     zIndex,
+    pointerEvents: isEditable ? 'auto' : 'none',
   };
 
   return (
