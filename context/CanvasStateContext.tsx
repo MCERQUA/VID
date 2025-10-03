@@ -719,6 +719,15 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [mode, isPlaying]);
 
+  const wasPlayingRef = React.useRef(isPlaying);
+
+  React.useEffect(() => {
+    if (wasPlayingRef.current && !isPlaying && mode === 'play') {
+      setMode('edit');
+    }
+    wasPlayingRef.current = isPlaying;
+  }, [isPlaying, mode]);
+
   const play = React.useCallback(() => {
     if (currentTime >= TIMELINE_DURATION) {
       setCurrentTimeState(0);
