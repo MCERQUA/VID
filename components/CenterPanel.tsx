@@ -2,7 +2,7 @@
 import React from 'react';
 import { ASSET_DRAG_TYPE } from '../constants';
 import { useCanvasState } from '../context/CanvasStateContext';
-import type { CanvasAsset } from '../types';
+import type { CanvasAsset, TimelineMode } from '../types';
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -17,10 +17,23 @@ const CanvasAssetLayer: React.FC<{
   onStartMove: (event: React.PointerEvent<HTMLDivElement>) => void;
   onStartResize: (event: React.PointerEvent<HTMLButtonElement>) => void;
   onNudge: (deltaX: number, deltaY: number) => void;
-}> = ({ asset, isSelected, onSelect, onStartMove, onStartResize, onNudge }) => {
-  if (!asset.isVisible) {
+  mode: TimelineMode;
+  currentTime: number;
+  isTrackHidden: boolean;
+}> = ({ asset, isSelected, onSelect, onStartMove, onStartResize, onNudge, mode, currentTime, isTrackHidden }) => {
+  if (!asset.isVisible || isTrackHidden) {
     return null;
   }
+
+  const isTimelineActive = asset.timeline
+    ? currentTime >= asset.timeline.start && currentTime < asset.timeline.start + asset.timeline.duration
+    : true;
+
+  if (!isTimelineActive) {
+    return null;
+  }
+
+  const isEditable = mode === 'edit' && !asset.isLocked;
 
   const style: React.CSSProperties = {
     position: 'absolute',
@@ -37,7 +50,7 @@ const CanvasAssetLayer: React.FC<{
       role="button"
       tabIndex={0}
       onPointerDown={(event) => {
-        if (asset.isLocked) {
+        if (!isEditable) {
           return;
         }
         (event.currentTarget as HTMLDivElement).focus();
@@ -45,7 +58,7 @@ const CanvasAssetLayer: React.FC<{
         onStartMove(event);
       }}
       onKeyDown={(event) => {
-        if (!isSelected || asset.isLocked) {
+        if (!isSelected || !isEditable) {
           return;
         }
         const step = event.shiftKey ? 5 : 1;
@@ -67,10 +80,10 @@ const CanvasAssetLayer: React.FC<{
         }
       }}
       style={style}
-      className={`group cursor-${asset.isLocked ? 'not-allowed' : 'move'} focus:outline-none`}
+      className={`group ${isEditable ? 'cursor-move' : 'cursor-default'} focus:outline-none`}
     >
       <img src={asset.mediaUrl} alt={asset.name} className="w-full h-full object-cover rounded shadow" draggable={false} />
-      {isSelected && !asset.isLocked && (
+      {isSelected && isEditable && (
         <>
           <div className="absolute inset-0 border-2 border-blue-400 rounded pointer-events-none" />
           <button
@@ -96,6 +109,9 @@ const CenterPanel: React.FC = () => {
     selectEntity,
     selected,
     updateAssetTransform,
+    contentTracks,
+    currentTime,
+    mode,
   } = useCanvasState();
   const stageRef = React.useRef<HTMLDivElement>(null);
   const [stageRect, setStageRect] = React.useState<DOMRect | null>(null);
@@ -123,7 +139,10 @@ const CenterPanel: React.FC = () => {
   }, []);
 
   React.useEffect(() => {
-    if (!interaction) {
+    if (!interaction || mode !== 'edit') {
+      if (interaction && mode !== 'edit') {
+        setInteraction(null);
+      }
       return;
     }
 
@@ -177,13 +196,13 @@ const CenterPanel: React.FC = () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [interaction, stageRect, updateAssetTransform]);
+  }, [interaction, mode, stageRect, updateAssetTransform]);
 
   const handleDrop = React.useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!stageRect) {
+      if (!stageRect || mode !== 'edit') {
         return;
       }
       const data = event.dataTransfer.getData(ASSET_DRAG_TYPE);
@@ -208,15 +227,15 @@ const CenterPanel: React.FC = () => {
         // ignore malformed payloads
       }
     },
-    [addAssetToCanvas, stageRect]
+    [addAssetToCanvas, mode, stageRect]
   );
 
   const handleDragOver = React.useCallback((event: React.DragEvent) => {
-    if (event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) {
+    if (mode === 'edit' && event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) {
       event.preventDefault();
       event.dataTransfer.dropEffect = 'copy';
     }
-  }, []);
+  }, [mode]);
 
   const selectedCanvasId = selected?.kind === 'canvas' ? selected.id : null;
 
@@ -224,7 +243,7 @@ const CenterPanel: React.FC = () => {
     (asset: CanvasAsset) => (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!stageRect) {
+      if (!stageRect || mode !== 'edit' || asset.isLocked) {
         return;
       }
       event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -237,14 +256,14 @@ const CenterPanel: React.FC = () => {
         initialTransform: { ...asset.transform },
       });
     },
-    [selectEntity, stageRect]
+    [mode, selectEntity, stageRect]
   );
 
   const startResize = React.useCallback(
     (asset: CanvasAsset) => (event: React.PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!stageRect) {
+      if (!stageRect || mode !== 'edit' || asset.isLocked) {
         return;
       }
       event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -256,17 +275,30 @@ const CenterPanel: React.FC = () => {
         initialTransform: { ...asset.transform },
       });
     },
-    [stageRect]
+    [mode, stageRect]
   );
 
   const handleNudge = React.useCallback(
     (asset: CanvasAsset, deltaX: number, deltaY: number) => {
+      if (mode !== 'edit' || asset.isLocked) {
+        return;
+      }
       const nextX = clamp(asset.transform.x + deltaX, 0, 100 - asset.transform.width);
       const nextY = clamp(asset.transform.y + deltaY, 0, 100 - asset.transform.height);
       updateAssetTransform(asset.id, { x: nextX, y: nextY });
     },
-    [updateAssetTransform]
+    [mode, updateAssetTransform]
   );
+
+  const hiddenTracks = React.useMemo(() => {
+    const ids = new Set<string>();
+    for (const track of contentTracks) {
+      if (track.hidden) {
+        ids.add(track.id);
+      }
+    }
+    return ids;
+  }, [contentTracks]);
 
   return (
     <main className="flex flex-col flex-1 bg-[#2d2d2d] items-center justify-center p-4 overflow-hidden">
@@ -296,6 +328,9 @@ const CenterPanel: React.FC = () => {
               onStartMove={startMove(asset)}
               onStartResize={startResize(asset)}
               onNudge={(dx, dy) => handleNudge(asset, dx, dy)}
+              mode={mode}
+              currentTime={currentTime}
+              isTrackHidden={asset.timeline ? hiddenTracks.has(asset.timeline.trackId) : false}
             />
           ))}
           <div className="absolute inset-0 border border-white/20 pointer-events-none rounded-lg" />

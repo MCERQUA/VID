@@ -7,6 +7,7 @@ import {
   PanelsIcon,
   AdjustmentsIcon,
 } from '../constants';
+import { useCanvasState } from '../context/CanvasStateContext';
 
 type HeaderProps = {
   isMobile: boolean;
@@ -17,6 +18,18 @@ type HeaderProps = {
 };
 
 const Header: React.FC<HeaderProps> = ({ isMobile, onToggleLeft, onToggleRight, leftOpen, rightOpen }) => {
+  const { mode, setMode, isPlaying, pause } = useCanvasState();
+
+  const handleSetMode = React.useCallback(
+    (nextMode: 'edit' | 'play') => {
+      if (nextMode === 'edit' && isPlaying) {
+        pause();
+      }
+      setMode(nextMode);
+    },
+    [isPlaying, pause, setMode]
+  );
+
   return (
     <header className="flex items-center justify-between h-14 px-4 bg-[#252526] border-b border-zinc-700 flex-shrink-0 z-40">
       <div className="flex items-center space-x-3">
@@ -41,8 +54,24 @@ const Header: React.FC<HeaderProps> = ({ isMobile, onToggleLeft, onToggleRight, 
           </div>
         )}
         <div className="hidden sm:flex items-center bg-zinc-700 rounded-md p-0.5">
-          <button className="px-3 py-1 text-sm bg-zinc-800 rounded-sm">Preview</button>
-          <button className="px-3 py-1 text-sm text-gray-400">Code</button>
+          <button
+            type="button"
+            onClick={() => handleSetMode('edit')}
+            className={`px-3 py-1 text-sm rounded-sm font-semibold ${
+              mode === 'edit' ? 'bg-zinc-800 text-white' : 'text-gray-300'
+            }`}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSetMode('play')}
+            className={`px-3 py-1 text-sm font-semibold rounded-sm ${
+              mode === 'play' ? 'bg-zinc-800 text-white' : 'text-gray-300'
+            }`}
+          >
+            Play
+          </button>
         </div>
         <button className="hidden md:flex items-center space-x-2 px-3 py-1 text-sm text-gray-400 hover:text-white">
           <FullscreenIcon className="w-4 h-4" />

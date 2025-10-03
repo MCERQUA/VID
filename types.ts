@@ -2,6 +2,7 @@
 import type React from 'react';
 
 export type AssetType = 'character' | 'background' | 'music' | 'graphic';
+export type TimelineMode = 'edit' | 'play';
 
 export interface AssetCategory {
   name: string;
@@ -44,6 +45,7 @@ export interface CanvasAsset {
   zIndex: number;
   isLocked: boolean;
   isVisible: boolean;
+  timeline?: CanvasAssetTimeline;
 }
 
 export interface AudioClip {
@@ -63,9 +65,37 @@ export interface AudioTrack {
   clips: AudioClip[];
   muted?: boolean;
   solo?: boolean;
+  locked?: boolean;
+  name?: string;
 }
 
 export type SelectedEntity =
   | { kind: 'canvas'; id: string }
   | { kind: 'audio'; id: string }
   | null;
+
+export interface CanvasAssetTimeline {
+  start: number;
+  duration: number;
+  trackId: string;
+  clipId: string;
+}
+
+export interface ContentClip {
+  id: string;
+  assetId: string;
+  canvasAssetId: string;
+  name: string;
+  start: number;
+  duration: number;
+  type: 'image' | 'video';
+  thumbnailUrl?: string;
+}
+
+export interface ContentTrack {
+  id: string;
+  name: string;
+  clips: ContentClip[];
+  locked?: boolean;
+  hidden?: boolean;
+}
