@@ -128,7 +128,11 @@ const TrackHeader: React.FC<{ track: Track }> = ({ track }) => {
 };
 
 
-const Timeline: React.FC = () => {
+type TimelineProps = {
+  height: number;
+};
+
+const Timeline: React.FC<TimelineProps> = ({ height }) => {
   const duration = 300; // 5 minutes
   const markers = Array.from({ length: Math.floor(duration / 15) + 1 }, (_, i) => i * 15);
   const getVolumeLevel = React.useMemo(() => {
@@ -148,7 +152,10 @@ const Timeline: React.FC = () => {
   }, []);
 
   return (
-    <footer className="h-80 bg-[#252526] border-t border-zinc-700 flex flex-col flex-shrink-0">
+    <footer
+      className="bg-[#252526] border-t border-zinc-700 flex flex-col flex-shrink-0"
+      style={{ height }}
+    >
       <TimelineToolbar />
       <div className="flex flex-1 min-h-0">
         <TimelineTools />

@@ -9,6 +9,8 @@ import Timeline from './components/Timeline';
 const MIN_PANEL_WIDTH = 220;
 const MAX_PANEL_WIDTH = 420;
 const MIN_CENTER_WIDTH = 480;
+const MIN_TIMELINE_HEIGHT = 180;
+const MIN_MAIN_HEIGHT = 240;
 
 type MobilePanelToggleProps = {
   side: 'left' | 'right';
@@ -57,6 +59,9 @@ const App: React.FC = () => {
   const [leftPanelWidth, setLeftPanelWidth] = React.useState(300);
   const [rightPanelWidth, setRightPanelWidth] = React.useState(320);
   const [draggingPanel, setDraggingPanel] = React.useState<'left' | 'right' | null>(null);
+  const [timelineHeight, setTimelineHeight] = React.useState(320);
+  const [isResizingTimeline, setIsResizingTimeline] = React.useState(false);
+  const timelineDragState = React.useRef({ startY: 0, startHeight: 320 });
   const [isMobile, setIsMobile] = React.useState(false);
   const [leftOpen, setLeftOpen] = React.useState(true);
   const [rightOpen, setRightOpen] = React.useState(true);
@@ -115,33 +120,47 @@ const App: React.FC = () => {
     }
 
     const handlePointerMove = (event: PointerEvent) => {
-      if (!draggingPanel || isMobile) {
+      if (isMobile) {
         return;
       }
 
-      if (draggingPanel === 'left') {
-        const rawWidth = event.clientX;
-        const maxAllowed = window.innerWidth - (rightOpen ? rightPanelWidth : 0) - MIN_CENTER_WIDTH;
-        const constrainedMax = Math.max(MIN_PANEL_WIDTH, maxAllowed);
+      if (draggingPanel) {
+        if (draggingPanel === 'left') {
+          const rawWidth = event.clientX;
+          const maxAllowed = window.innerWidth - (rightOpen ? rightPanelWidth : 0) - MIN_CENTER_WIDTH;
+          const constrainedMax = Math.max(MIN_PANEL_WIDTH, maxAllowed);
+          const clamped = Math.min(
+            MAX_PANEL_WIDTH,
+            Math.max(MIN_PANEL_WIDTH, Math.min(rawWidth, constrainedMax)),
+          );
+          setLeftPanelWidth(clamped);
+        } else if (draggingPanel === 'right') {
+          const rawWidth = window.innerWidth - event.clientX;
+          const maxAllowed = window.innerWidth - (leftOpen ? leftPanelWidth : 0) - MIN_CENTER_WIDTH;
+          const constrainedMax = Math.max(MIN_PANEL_WIDTH, maxAllowed);
+          const clamped = Math.min(
+            MAX_PANEL_WIDTH,
+            Math.max(MIN_PANEL_WIDTH, Math.min(rawWidth, constrainedMax)),
+          );
+          setRightPanelWidth(clamped);
+        }
+      } else if (isResizingTimeline) {
+        const delta = timelineDragState.current.startY - event.clientY;
+        const nextHeight = timelineDragState.current.startHeight + delta;
+        const containerHeight = containerRef.current?.getBoundingClientRect().height ?? window.innerHeight;
+        const maxAllowed = containerHeight - MIN_MAIN_HEIGHT;
+        const constrainedMax = Math.max(MIN_TIMELINE_HEIGHT, maxAllowed);
         const clamped = Math.min(
-          MAX_PANEL_WIDTH,
-          Math.max(MIN_PANEL_WIDTH, Math.min(rawWidth, constrainedMax)),
+          constrainedMax,
+          Math.max(MIN_TIMELINE_HEIGHT, nextHeight),
         );
-        setLeftPanelWidth(clamped);
-      } else if (draggingPanel === 'right') {
-        const rawWidth = window.innerWidth - event.clientX;
-        const maxAllowed = window.innerWidth - (leftOpen ? leftPanelWidth : 0) - MIN_CENTER_WIDTH;
-        const constrainedMax = Math.max(MIN_PANEL_WIDTH, maxAllowed);
-        const clamped = Math.min(
-          MAX_PANEL_WIDTH,
-          Math.max(MIN_PANEL_WIDTH, Math.min(rawWidth, constrainedMax)),
-        );
-        setRightPanelWidth(clamped);
+        setTimelineHeight(clamped);
       }
     };
 
     const stopDragging = () => {
       setDraggingPanel(null);
+      setIsResizingTimeline(false);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -151,7 +170,7 @@ const App: React.FC = () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', stopDragging);
     };
-  }, [draggingPanel, isMobile, leftOpen, leftPanelWidth, rightOpen, rightPanelWidth]);
+  }, [draggingPanel, isMobile, leftOpen, leftPanelWidth, rightOpen, rightPanelWidth, timelineHeight, isResizingTimeline]);
 
   const handleToggleLeft = React.useCallback(() => {
     setLeftOpen((prev) => {
@@ -182,6 +201,19 @@ const App: React.FC = () => {
     setDraggingPanel(panel);
   }, [isMobile]);
 
+  const startTimelineResize = React.useCallback((event: React.PointerEvent) => {
+    if (isMobile) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    timelineDragState.current = {
+      startY: event.clientY,
+      startHeight: timelineHeight,
+    };
+    setIsResizingTimeline(true);
+  }, [isMobile, timelineHeight]);
+
   const closePanels = React.useCallback(() => {
     setLeftOpen(false);
     setRightOpen(false);
@@ -196,59 +228,71 @@ const App: React.FC = () => {
         leftOpen={leftOpen}
         rightOpen={rightOpen}
       />
-      <div className="flex flex-1 min-h-0 relative">
-        {!isMobile && leftOpen && (
-          <div className="h-full flex-shrink-0" style={{ width: leftPanelWidth }}>
-            <LeftSidebar />
-          </div>
-        )}
-        {!isMobile && leftOpen && (
-          <div
-            className="w-1 cursor-col-resize flex-shrink-0 relative group"
-            onPointerDown={startDragging('left')}
-          >
-            <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
-          </div>
-        )}
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="flex flex-1 min-h-0 relative">
+          {!isMobile && leftOpen && (
+            <div className="h-full flex-shrink-0" style={{ width: leftPanelWidth }}>
+              <LeftSidebar />
+            </div>
+          )}
+          {!isMobile && leftOpen && (
+            <div
+              className="w-1 cursor-col-resize flex-shrink-0 relative group"
+              onPointerDown={startDragging('left')}
+            >
+              <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
+            </div>
+          )}
 
-        <CenterPanel />
+          <CenterPanel />
 
-        {!isMobile && rightOpen && (
-          <div
-            className="w-1 cursor-col-resize flex-shrink-0 relative group"
-            onPointerDown={startDragging('right')}
-          >
-            <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
-          </div>
-        )}
-        {!isMobile && rightOpen && (
-          <div className="h-full flex-shrink-0" style={{ width: rightPanelWidth }}>
-            <RightSidebar />
-          </div>
-        )}
+          {!isMobile && rightOpen && (
+            <div
+              className="w-1 cursor-col-resize flex-shrink-0 relative group"
+              onPointerDown={startDragging('right')}
+            >
+              <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-zinc-700 group-hover:bg-blue-400 transition-colors" />
+            </div>
+          )}
+          {!isMobile && rightOpen && (
+            <div className="h-full flex-shrink-0" style={{ width: rightPanelWidth }}>
+              <RightSidebar />
+            </div>
+          )}
 
-        {isMobile && leftOpen && (
-          <LeftSidebar isMobile onClose={() => setLeftOpen(false)} className="lg:hidden" />
-        )}
-        {isMobile && rightOpen && (
-          <RightSidebar isMobile onClose={() => setRightOpen(false)} className="lg:hidden" />
-        )}
-        {isMobile && (
-          <>
-            <MobilePanelToggle side="left" isOpen={leftOpen} onToggle={handleToggleLeft} />
-            <MobilePanelToggle side="right" isOpen={rightOpen} onToggle={handleToggleRight} />
-          </>
-        )}
-        {isMobile && (leftOpen || rightOpen) && (
-          <button
-            type="button"
-            aria-label="Close panels"
-            className="fixed inset-x-0 top-14 bottom-0 bg-black/40 z-30"
-            onClick={closePanels}
-          />
-        )}
+          {isMobile && leftOpen && (
+            <LeftSidebar isMobile onClose={() => setLeftOpen(false)} className="lg:hidden" />
+          )}
+          {isMobile && rightOpen && (
+            <RightSidebar isMobile onClose={() => setRightOpen(false)} className="lg:hidden" />
+          )}
+          {isMobile && (
+            <>
+              <MobilePanelToggle side="left" isOpen={leftOpen} onToggle={handleToggleLeft} />
+              <MobilePanelToggle side="right" isOpen={rightOpen} onToggle={handleToggleRight} />
+            </>
+          )}
+          {isMobile && (leftOpen || rightOpen) && (
+            <button
+              type="button"
+              aria-label="Close panels"
+              className="fixed inset-x-0 top-14 bottom-0 bg-black/40 z-30"
+              onClick={closePanels}
+            />
+          )}
+        </div>
+
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize timeline"
+          className="h-2 cursor-row-resize flex-shrink-0 relative group"
+          onPointerDown={startTimelineResize}
+        >
+          <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-0.5 bg-zinc-700 rounded group-hover:bg-blue-400 transition-colors" />
+        </div>
+        <Timeline height={timelineHeight} />
       </div>
-      <Timeline />
     </div>
   );
 };
