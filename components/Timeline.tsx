@@ -19,8 +19,24 @@ import {
 } from '../constants';
 import type { Track, Clip } from '../types';
 
-const AudioWaveform: React.FC = () => {
-  const bars = Array.from({ length: 150 }, (_, i) => Math.random() * 0.8 + 0.2);
+const createSeededRandom = (seedString: string) => {
+  let seed = 0;
+  for (let i = 0; i < seedString.length; i += 1) {
+    seed = (seed * 31 + seedString.charCodeAt(i)) >>> 0;
+  }
+
+  return () => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+};
+
+const AudioWaveform: React.FC<{ seed: string }> = ({ seed }) => {
+  const bars = React.useMemo(() => {
+    const random = createSeededRandom(seed);
+    return Array.from({ length: 150 }, () => random() * 0.8 + 0.2);
+  }, [seed]);
+
   return (
     <div className="flex items-center h-full w-full">
       {bars.map((height, i) => (
@@ -54,7 +70,7 @@ const TimelineClip: React.FC<{ clip: Clip }> = ({ clip }) => {
     >
       <div className="w-1 h-full bg-white/20"></div>
       <div className="w-full h-full opacity-80 flex-1">
-        {clip.type === 'video' ? <VideoThumbnails /> : <AudioWaveform />}
+        {clip.type === 'video' ? <VideoThumbnails /> : <AudioWaveform seed={clip.id} />}
       </div>
       <div className="w-1 h-full bg-white/20"></div>
     </div>
@@ -115,6 +131,21 @@ const TrackHeader: React.FC<{ track: Track }> = ({ track }) => {
 const Timeline: React.FC = () => {
   const duration = 300; // 5 minutes
   const markers = Array.from({ length: Math.floor(duration / 15) + 1 }, (_, i) => i * 15);
+  const getVolumeLevel = React.useMemo(() => {
+    const cache = new Map<string, number>();
+    return (trackId: string) => {
+      if (!cache.has(trackId)) {
+        let hash = 0;
+        for (let i = 0; i < trackId.length; i += 1) {
+          hash = (hash << 5) - hash + trackId.charCodeAt(i);
+          hash |= 0;
+        }
+        const normalized = Math.abs(hash % 61) + 20;
+        cache.set(trackId, normalized);
+      }
+      return cache.get(trackId)!;
+    };
+  }, []);
 
   return (
     <footer className="h-80 bg-[#252526] border-t border-zinc-700 flex flex-col flex-shrink-0">
@@ -177,7 +208,7 @@ const Timeline: React.FC = () => {
                 <div key={track.id} className="h-16 border-b border-zinc-800 flex items-center justify-center p-2">
                     {track.type === 'audio' && (
                         <div className="w-2 h-full bg-zinc-700 rounded-full overflow-hidden">
-                            <div className="bg-green-500 w-full" style={{ height: `${Math.random() * 60 + 20}%`}}></div>
+                            <div className="bg-green-500 w-full" style={{ height: `${getVolumeLevel(track.id)}%`}}></div>
                         </div>
                     )}
                 </div>

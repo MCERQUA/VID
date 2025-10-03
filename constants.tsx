@@ -11,6 +11,12 @@ export const RefreshIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 export const FullscreenIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <svg {...props} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" /></svg>
 );
+export const PanelsIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg {...props} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h7a2 2 0 012 2v12H5a2 2 0 01-2-2V5zm11 0h5a2 2 0 012 2v5h-7V5zm0 9h7v5a2 2 0 01-2 2h-5v-7z" /></svg>
+);
+export const AdjustmentsIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg {...props} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h4M10 6h10M4 12h6M12 12h8M4 18h2M8 18h12M8 4v4M14 10v4M6 16v4" /></svg>
+);
 
 
 // Icons for Left Sidebar
