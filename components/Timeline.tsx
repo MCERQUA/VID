@@ -189,24 +189,25 @@ const useClipDrag = (
 
   const getTimeFromClientX = React.useCallback(
     (clientX: number) => {
-      const contentNode = timelineAreaRef.current;
-      const scrollNode = scrollContainerRef.current;
-      if (!contentNode || !scrollNode) {
+      const contentNode = timelineContentRef.current;
+      if (!contentNode) {
         return 0;
       }
 
       const rect = contentNode.getBoundingClientRect();
-      const scrollLeft = scrollNode.scrollLeft;
-      const maxPosition = timelineDuration * pixelsPerSecond;
-      const position = clamp(clientX - rect.left + scrollLeft, 0, maxPosition);
-      return maxPosition === 0 ? 0 : position / pixelsPerSecond;
+      const scrollContainer = contentNode.parentElement instanceof HTMLElement ? contentNode.parentElement : null;
+      const scrollLeft = scrollContainer?.scrollLeft ?? 0;
+      const availableWidth = contentNode.scrollWidth || rect.width;
+      const position = clamp(clientX - rect.left + scrollLeft, 0, availableWidth);
+      const ratio = availableWidth === 0 ? 0 : position / availableWidth;
+      return ratio * timelineDuration;
     },
-    [pixelsPerSecond, scrollContainerRef, timelineAreaRef, timelineDuration]
+    []
   );
 
   const findHoverContentTrack = React.useCallback(
     (clientY: number) => {
-      const contentNode = timelineAreaRef.current;
+      const contentNode = timelineContentRef.current;
       if (!contentNode) {
         return null;
       }
@@ -316,7 +317,7 @@ const useClipDrag = (
       }
 
       if (dragState.kind === 'content' && dragState.mode === 'move') {
-        const trackElements = timelineAreaRef.current?.querySelectorAll<HTMLDivElement>(
+        const trackElements = timelineContentRef.current?.querySelectorAll<HTMLDivElement>(
           '[data-track-kind="content"]'
         );
         if (trackElements) {
@@ -900,17 +901,13 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
             </div>
 
             <div className="flex w-full">
-              <div
-                ref={trackSidebarRef}
-                className="flex-shrink-0 sticky left-0 z-10 bg-[#252526] border-r border-zinc-700"
-                style={{ width: layoutTrackPanelWidth }}
-              >
-                {contentTracks.map((track) => (
-                  <ContentTrackHeader
-                    key={track.id}
-                    name={track.name}
-                    locked={track.locked}
-                    hidden={track.hidden}
+              <div className="w-48 flex-shrink-0 sticky left-0 z-10 bg-[#252526] border-r border-zinc-700">
+    {contentTracks.map((track) => (
+      <ContentTrackHeader
+        key={track.id}
+        name={track.name}
+        locked={track.locked}
+        hidden={track.hidden}
                     onToggleLock={() => toggleContentTrackLock(track.id)}
                     onToggleVisibility={() => toggleContentTrackVisibility(track.id)}
                     disableControls={mode !== 'edit'}
