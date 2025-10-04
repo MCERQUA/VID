@@ -155,15 +155,45 @@ const useClipDrag = (
 
   const getTimeFromClientX = React.useCallback(
     (clientX: number) => {
-      const rect = timelineContentRef.current?.getBoundingClientRect();
-      if (!rect) {
+      const contentNode = timelineContentRef.current;
+      if (!contentNode) {
         return 0;
       }
-      const position = clamp(clientX - rect.left, 0, rect.width);
-      const ratio = rect.width === 0 ? 0 : position / rect.width;
+
+      const rect = contentNode.getBoundingClientRect();
+      const scrollContainer = contentNode.parentElement instanceof HTMLElement ? contentNode.parentElement : null;
+      const scrollLeft = scrollContainer?.scrollLeft ?? 0;
+      const availableWidth = contentNode.scrollWidth || rect.width;
+      const position = clamp(clientX - rect.left + scrollLeft, 0, availableWidth);
+      const ratio = availableWidth === 0 ? 0 : position / availableWidth;
       return ratio * timelineDuration;
     },
     [timelineDuration]
+  );
+
+  const findHoverContentTrack = React.useCallback(
+    (clientY: number) => {
+      const contentNode = timelineContentRef.current;
+      if (!contentNode) {
+        return null;
+      }
+
+      const trackElements = contentNode.querySelectorAll<HTMLDivElement>('[data-track-kind="content"]');
+      const TOLERANCE = 12;
+
+      for (const element of trackElements) {
+        const rect = element.getBoundingClientRect();
+        if (clientY >= rect.top - TOLERANCE && clientY <= rect.bottom + TOLERANCE) {
+          return {
+            id: element.dataset.trackId ?? null,
+            locked: element.dataset.trackLocked === 'true',
+          };
+        }
+      }
+
+      return null;
+    },
+    []
   );
 
   React.useEffect(() => {
@@ -219,6 +249,21 @@ const useClipDrag = (
         if (dragState.mode === 'move') {
           const newStart = clamp(pointerTime - dragState.offset, 0, timelineDuration - target.duration);
           updateContentClip(target.id, { start: newStart });
+
+          const hoveredTrack = findHoverContentTrack(event.clientY);
+          if (
+            hoveredTrack &&
+            hoveredTrack.id &&
+            hoveredTrack.id !== dragState.trackId &&
+            !hoveredTrack.locked
+          ) {
+            updateContentClip(target.id, { trackId: hoveredTrack.id });
+            setDragState((prev) =>
+              prev && prev.pointerId === dragState.pointerId
+                ? { ...prev, trackId: hoveredTrack.id }
+                : prev
+            );
+          }
         } else if (dragState.mode === 'resize-start') {
           const endTime = target.start + target.duration;
           const newStart = clamp(pointerTime, 0, endTime - 1);
@@ -269,7 +314,17 @@ const useClipDrag = (
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [audioTracks, contentTracks, dragState, getTimeFromClientX, mode, timelineDuration, updateAudioClip, updateContentClip]);
+  }, [
+    audioTracks,
+    contentTracks,
+    dragState,
+    findHoverContentTrack,
+    getTimeFromClientX,
+    mode,
+    timelineDuration,
+    updateAudioClip,
+    updateContentClip,
+  ]);
 
   React.useEffect(() => {
     if (mode !== 'edit') {
