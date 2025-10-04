@@ -22,7 +22,7 @@ import type { AudioClip, ContentClip, TimelineMode } from '../types';
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
-const formatTime = (seconds: number) => {
+const formatBaseTime = (seconds: number) => {
   const mins = Math.floor(seconds / 60)
     .toString()
     .padStart(2, '0');
@@ -31,6 +31,23 @@ const formatTime = (seconds: number) => {
     .padStart(2, '0');
   return `${mins}:${secs}`;
 };
+
+const formatDetailedTime = (seconds: number) => {
+  const totalMs = Math.max(0, Math.round(seconds * 1000));
+  const mins = Math.floor(totalMs / 60000)
+    .toString()
+    .padStart(2, '0');
+  const secs = Math.floor((totalMs % 60000) / 1000)
+    .toString()
+    .padStart(2, '0');
+  const ms = (totalMs % 1000).toString().padStart(3, '0');
+  return `${mins}:${secs}.${ms}`;
+};
+
+const BASE_PIXELS_PER_SECOND = 40;
+const MIN_PIXELS_PER_SECOND = 10;
+const MAX_PIXELS_PER_SECOND = 160;
+const FALLBACK_TRACK_PANEL_WIDTH = 192; // Tailwind w-48
 
 const createSeededRandom = (seedString: string) => {
   let seed = 0;
@@ -64,7 +81,9 @@ const TimelineToolbar: React.FC<{
   onTogglePlay: () => void;
   mode: TimelineMode;
   setMode: (mode: TimelineMode) => void;
-}> = ({ isPlaying, onTogglePlay, mode, setMode }) => (
+  pixelsPerSecond: number;
+  onZoomChange: (value: number) => void;
+}> = ({ isPlaying, onTogglePlay, mode, setMode, pixelsPerSecond, onZoomChange }) => (
   <div className="h-12 bg-[#2d2d2d] flex items-center justify-between px-4 border-b border-zinc-700 flex-shrink-0">
     <div className="flex items-center space-x-4">
       <button className="p-1.5 text-gray-400 hover:text-white hover:bg-zinc-700 rounded" type="button">
@@ -96,6 +115,19 @@ const TimelineToolbar: React.FC<{
       </button>
     </div>
     <div className="flex items-center space-x-4">
+      <div className="flex items-center space-x-2 text-xs text-gray-300">
+        <span className="uppercase tracking-wide font-semibold">Zoom</span>
+        <input
+          type="range"
+          min={MIN_PIXELS_PER_SECOND}
+          max={MAX_PIXELS_PER_SECOND}
+          step={5}
+          value={pixelsPerSecond}
+          onChange={(event) => onZoomChange(Number(event.target.value))}
+          className="w-28"
+        />
+        <span className="w-12 text-right font-mono">{`${Math.round((pixelsPerSecond / BASE_PIXELS_PER_SECOND) * 100)}%`}</span>
+      </div>
       <div className="flex items-center bg-zinc-700 rounded-md overflow-hidden text-xs">
         <button
           type="button"
@@ -148,9 +180,11 @@ const useClipDrag = (
   audioTracks: ReturnType<typeof useCanvasState>['audioTracks'],
   updateContentClip: (clipId: string, updates: Partial<ContentClip> & { trackId?: string }) => void,
   updateAudioClip: (clipId: string, updates: Partial<AudioClip>) => void,
-  mode: TimelineMode
+  mode: TimelineMode,
+  pixelsPerSecond: number,
+  scrollContainerRef: React.RefObject<HTMLDivElement>,
+  timelineAreaRef: React.RefObject<HTMLDivElement>
 ) => {
-  const timelineContentRef = React.useRef<HTMLDivElement>(null);
   const [dragState, setDragState] = React.useState<DragState | null>(null);
 
   const getTimeFromClientX = React.useCallback(
@@ -168,7 +202,7 @@ const useClipDrag = (
       const ratio = availableWidth === 0 ? 0 : position / availableWidth;
       return ratio * timelineDuration;
     },
-    [timelineDuration]
+    []
   );
 
   const findHoverContentTrack = React.useCallback(
@@ -332,7 +366,7 @@ const useClipDrag = (
     }
   }, [mode]);
 
-  return { dragState, setDragState, timelineContentRef, getTimeFromClientX };
+  return { dragState, setDragState, getTimeFromClientX };
 };
 
 const TimelineClip: React.FC<{
@@ -340,6 +374,7 @@ const TimelineClip: React.FC<{
     | (AudioClip & { kind: 'audio' })
     | (ContentClip & { kind: 'content'; thumbnailUrl?: string });
   timelineDuration: number;
+  pixelsPerSecond: number;
   isSelected: boolean;
   isDragging: boolean;
   isLocked: boolean;
@@ -350,6 +385,7 @@ const TimelineClip: React.FC<{
 }> = ({
   clip,
   timelineDuration,
+  pixelsPerSecond,
   isSelected,
   isDragging,
   isLocked,
@@ -358,8 +394,12 @@ const TimelineClip: React.FC<{
   onResizeStart,
   onResizeEnd,
 }) => {
-  const left = (clip.start / timelineDuration) * 100;
-  const width = (clip.duration / timelineDuration) * 100;
+  const timelinePixelWidth = Math.max(1, timelineDuration * pixelsPerSecond);
+  const rawLeft = clip.start * pixelsPerSecond;
+  const safeLeft = clamp(rawLeft, 0, timelinePixelWidth);
+  const rawWidth = clip.duration * pixelsPerSecond;
+  const maxWidth = Math.max(1, timelinePixelWidth - safeLeft);
+  const safeWidth = Math.max(1, Math.min(rawWidth, maxWidth));
   const canInteract = mode === 'edit' && !isLocked;
 
   const baseClasses =
@@ -372,7 +412,7 @@ const TimelineClip: React.FC<{
       className={`absolute h-full flex items-center rounded-md overflow-hidden border border-black/40 transition-[box-shadow,transform] ${
         isSelected ? 'ring-2 ring-blue-400' : ''
       } ${isDragging ? 'shadow-xl scale-[1.01]' : ''}`}
-      style={{ left: `${left}%`, width: `${width}%`, height: '80%' }}
+      style={{ left: `${safeLeft}px`, width: `${safeWidth}px`, height: '80%' }}
     >
       <div
         role="presentation"
@@ -537,13 +577,63 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
     pause,
   } = useCanvasState();
 
-  const { dragState, setDragState, timelineContentRef, getTimeFromClientX } = useClipDrag(
+  const [pixelsPerSecond, setPixelsPerSecond] = React.useState(BASE_PIXELS_PER_SECOND);
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+  const timelineTracksRef = React.useRef<HTMLDivElement>(null);
+  const trackSidebarRef = React.useRef<HTMLDivElement>(null);
+  const trackHeaderRef = React.useRef<HTMLDivElement>(null);
+  const [trackPanelWidth, setTrackPanelWidth] = React.useState(FALLBACK_TRACK_PANEL_WIDTH);
+
+  React.useLayoutEffect(() => {
+    const elements = [trackSidebarRef.current, trackHeaderRef.current].filter(
+      (element): element is HTMLDivElement => Boolean(element)
+    );
+
+    if (elements.length === 0) {
+      return undefined;
+    }
+
+    const updateWidth = () => {
+      const measured = elements.reduce((max, element) => {
+        const width = element.getBoundingClientRect().width;
+        return width > max ? width : max;
+      }, 0);
+      const fallback = measured > 0 ? measured : FALLBACK_TRACK_PANEL_WIDTH;
+      setTrackPanelWidth((prev) => {
+        const next = Math.round(fallback);
+        return prev === next ? prev : next;
+      });
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(updateWidth);
+      elements.forEach((element) => observer.observe(element));
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
+
+  const handleZoomChange = React.useCallback((value: number) => {
+    setPixelsPerSecond(clamp(value, MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND));
+  }, []);
+
+  const timelinePixelWidth = Math.max(1, timelineDuration * pixelsPerSecond);
+  const layoutTrackPanelWidth = Math.max(0, trackPanelWidth);
+
+  const { dragState, setDragState, getTimeFromClientX } = useClipDrag(
     timelineDuration,
     contentTracks,
     audioTracks,
     updateContentClip,
     updateAudioClip,
-    mode
+    mode,
+    pixelsPerSecond,
+    scrollContainerRef,
+    timelineTracksRef
   );
 
   const [scrubPointer, setScrubPointer] = React.useState<number | null>(null);
@@ -694,12 +784,27 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
     }
   }, []);
 
-  const markers = React.useMemo(
-    () => Array.from({ length: Math.floor(timelineDuration / 15) + 1 }, (_, index) => index * 15),
-    [timelineDuration]
-  );
+  const markerStep = React.useMemo(() => {
+    const desiredPixelsBetweenMarkers = 80;
+    const stepOptions = [0.25, 0.5, 1, 2, 5, 10, 15, 30, 60];
+    const minimumSeconds = desiredPixelsBetweenMarkers / pixelsPerSecond;
+    const matchedStep = stepOptions.find((step) => step >= minimumSeconds);
+    return matchedStep ?? stepOptions[stepOptions.length - 1];
+  }, [pixelsPerSecond]);
 
-  const sliderPercentage = timelineDuration === 0 ? 0 : (currentTime / timelineDuration) * 100;
+  const markers = React.useMemo(() => {
+    const values: number[] = [];
+    for (let time = 0; time <= timelineDuration; time += markerStep) {
+      values.push(Number(time.toFixed(6)));
+    }
+    if (values[values.length - 1] !== timelineDuration) {
+      values.push(timelineDuration);
+    }
+    return values;
+  }, [markerStep, timelineDuration]);
+
+  const scrubPosition = Math.min(currentTime, timelineDuration) * pixelsPerSecond;
+  const scrubPixel = Math.round(scrubPosition * 1000) / 1000;
 
   const startScrub = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -740,40 +845,58 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
 
   return (
     <footer className="bg-[#252526] border-t border-zinc-700 flex flex-col flex-shrink-0" style={{ height }}>
-      <TimelineToolbar isPlaying={isPlaying} onTogglePlay={handleTogglePlay} mode={mode} setMode={setMode} />
+      <TimelineToolbar
+        isPlaying={isPlaying}
+        onTogglePlay={handleTogglePlay}
+        mode={mode}
+        setMode={setMode}
+        pixelsPerSecond={pixelsPerSecond}
+        onZoomChange={handleZoomChange}
+      />
       <div className="flex flex-1 min-h-0">
         <TimelineTools />
-        <div className="flex-1 overflow-auto relative" id="timeline-scroll-container">
-          <div className="relative h-full" style={{ width: '200%' }} ref={timelineContentRef}>
+        <div className="flex-1 overflow-auto relative" ref={scrollContainerRef}>
+          <div className="min-w-max" style={{ width: layoutTrackPanelWidth + timelinePixelWidth }}>
             <div className="sticky top-0 z-20 bg-[#252526] border-b border-zinc-700">
-              <div className="relative h-14">
+              <div className="flex">
                 <div
-                  role="presentation"
-                  className="absolute inset-0 cursor-ew-resize"
-                  onPointerDown={startScrub}
-                />
-                <div className="absolute left-3 top-1 text-xs font-mono text-gray-300">{formatTime(currentTime)}</div>
-                {markers.map((time) => {
-                  const percentage = (time / timelineDuration) * 100;
-                  return (
-                    <div
-                      key={time}
-                      className="absolute h-full flex flex-col items-start -translate-x-1/2"
-                      style={{ left: `${percentage}%` }}
-                    >
-                      <span className="text-xs text-gray-400">{new Date(time * 1000).toISOString().substr(14, 5)}</span>
-                      <div className="w-px h-3 bg-gray-500 mt-1" />
-                    </div>
-                  );
-                })}
-                <div
-                  className="absolute top-0 bottom-0 w-px bg-yellow-400"
-                  style={{ left: `${sliderPercentage}%` }}
-                />
-                <div
-                  className="absolute -bottom-1 w-2 h-2 rounded-full bg-yellow-400 translate-x-[-50%]"
-                  style={{ left: `${sliderPercentage}%` }}
-                />
+                  ref={trackHeaderRef}
+                  className="h-14 border-r border-zinc-700 flex items-center px-3 sticky left-0 z-30 bg-[#252526]"
+                  style={{ width: layoutTrackPanelWidth }}
+                >
+                  <div className="text-xs font-mono text-gray-300">{formatDetailedTime(currentTime)}</div>
+                </div>
+                <div className="relative h-14 shrink-0" style={{ width: timelinePixelWidth }}>
+                  <div role="presentation" className="absolute inset-0 cursor-ew-resize" onPointerDown={startScrub} />
+                  {markers.map((time) => {
+                    const position = Math.round(time * pixelsPerSecond * 1000) / 1000;
+                    const isStart = time === 0;
+                    return (
+                      <div
+                        key={time}
+                        className="absolute h-full flex flex-col items-start"
+                        style={{
+                          left: position,
+                          transform: `translateX(${isStart ? 0 : -50}%)`,
+                          minWidth: isStart ? undefined : '0.01px',
+                        }}
+                      >
+                        <span className="text-xs text-gray-400">
+                          {markerStep < 1 ? formatDetailedTime(time) : formatBaseTime(time)}
+                        </span>
+                        <div className="w-px h-3 bg-gray-500 mt-1" />
+                      </div>
+                    );
+                  })}
+                  <div
+                    className="pointer-events-none absolute top-0 bottom-0 w-px bg-yellow-400"
+                    style={{ left: scrubPixel }}
+                  />
+                  <div
+                    className="pointer-events-none absolute -bottom-1 w-2 h-2 rounded-full bg-yellow-400 translate-x-[-50%]"
+                    style={{ left: scrubPixel }}
+                  />
+                </div>
               </div>
             </div>
 
@@ -804,7 +927,15 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
                   />
                 ))}
               </div>
-              <div className="flex-1 relative">
+              <div
+                className="relative shrink-0"
+                style={{ width: timelinePixelWidth }}
+                ref={timelineTracksRef}
+              >
+                <div
+                  className="pointer-events-none absolute top-0 bottom-0 w-px bg-yellow-400 z-30"
+                  style={{ left: scrubPixel }}
+                />
                 {contentTracks.map((track, trackIndex) => (
                   <div
                     key={track.id}
@@ -820,6 +951,7 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
                         key={clip.id}
                         clip={{ ...clip, kind: 'content' }}
                         timelineDuration={timelineDuration}
+                        pixelsPerSecond={pixelsPerSecond}
                         isSelected={selectedContentClipId === clip.id}
                         isDragging={dragState?.clipId === clip.id}
                         isLocked={Boolean(track.locked)}
@@ -851,6 +983,7 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
                         key={clip.id}
                         clip={{ ...clip, kind: 'audio' }}
                         timelineDuration={timelineDuration}
+                        pixelsPerSecond={pixelsPerSecond}
                         isSelected={selectedAudioClipId === clip.id}
                         isDragging={dragState?.clipId === clip.id}
                         isLocked={Boolean(track.locked)}
