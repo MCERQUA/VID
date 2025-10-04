@@ -183,7 +183,7 @@ const useClipDrag = (
   mode: TimelineMode,
   pixelsPerSecond: number,
   scrollContainerRef: React.RefObject<HTMLDivElement>,
-  timelineAreaRef: React.RefObject<HTMLDivElement>
+  timelineContentRef: React.RefObject<HTMLDivElement>
 ) => {
   const [dragState, setDragState] = React.useState<DragState | null>(null);
 
@@ -195,14 +195,16 @@ const useClipDrag = (
       }
 
       const rect = contentNode.getBoundingClientRect();
-      const scrollContainer = contentNode.parentElement instanceof HTMLElement ? contentNode.parentElement : null;
+      const scrollContainer =
+        scrollContainerRef.current ??
+        (contentNode.parentElement instanceof HTMLElement ? contentNode.parentElement : null);
       const scrollLeft = scrollContainer?.scrollLeft ?? 0;
       const availableWidth = contentNode.scrollWidth || rect.width;
       const position = clamp(clientX - rect.left + scrollLeft, 0, availableWidth);
       const ratio = availableWidth === 0 ? 0 : position / availableWidth;
       return ratio * timelineDuration;
     },
-    []
+    [scrollContainerRef, timelineContentRef, timelineDuration]
   );
 
   const findHoverContentTrack = React.useCallback(
@@ -227,7 +229,7 @@ const useClipDrag = (
 
       return null;
     },
-    []
+    [timelineContentRef]
   );
 
   React.useEffect(() => {
