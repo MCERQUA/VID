@@ -9,6 +9,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 const secondsToFrameFloor = (time: number) => Math.floor(time * FRAME_RATE + Number.EPSILON);
 
 const secondsToFrameCount = (time: number) => Math.max(1, Math.round(time * FRAME_RATE + Number.EPSILON));
+const timeToFrameIndex = (time: number) => Math.round(time * FRAME_RATE);
 
 const isFrameWithinClip = (
   frameIndex: number,
@@ -16,6 +17,8 @@ const isFrameWithinClip = (
 ) => {
   const clipStartFrame = secondsToFrameFloor(clip.start);
   const clipDurationFrames = secondsToFrameCount(clip.duration);
+  const clipStartFrame = timeToFrameIndex(clip.start);
+  const clipDurationFrames = Math.max(1, timeToFrameIndex(clip.duration));
   const clipEndFrame = clipStartFrame + clipDurationFrames;
   return frameIndex >= clipStartFrame && frameIndex < clipEndFrame;
 };
@@ -57,6 +60,8 @@ const CanvasAssetLayer: React.FC<{
     ? isFrameWithinClip(secondsToFrameFloor(currentTime), timelineClip)
     : asset.timeline
     ? isFrameWithinClip(secondsToFrameFloor(currentTime), asset.timeline)
+  const isTimelineActive = asset.timeline
+    ? isFrameWithinClip(timeToFrameIndex(currentTime), asset.timeline)
     : true;
 
   if (!isTimelineActive) {
