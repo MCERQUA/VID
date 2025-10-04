@@ -1,10 +1,22 @@
 
 import React from 'react';
-import { ASSET_DRAG_TYPE } from '../constants';
+import { ASSET_DRAG_TYPE, FRAME_RATE } from '../constants';
 import { useCanvasState } from '../context/CanvasStateContext';
 import type { CanvasAsset, TimelineMode } from '../types';
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const timeToFrameIndex = (time: number) => Math.round(time * FRAME_RATE);
+
+const isFrameWithinClip = (
+  frameIndex: number,
+  clip: { start: number; duration: number }
+) => {
+  const clipStartFrame = timeToFrameIndex(clip.start);
+  const clipDurationFrames = Math.max(1, timeToFrameIndex(clip.duration));
+  const clipEndFrame = clipStartFrame + clipDurationFrames;
+  return frameIndex >= clipStartFrame && frameIndex < clipEndFrame;
+};
 
 const stageStyle = {
   aspectRatio: '16 / 9',
@@ -38,7 +50,7 @@ const CanvasAssetLayer: React.FC<{
   }
 
   const isTimelineActive = asset.timeline
-    ? currentTime >= asset.timeline.start && currentTime < asset.timeline.start + asset.timeline.duration
+    ? isFrameWithinClip(timeToFrameIndex(currentTime), asset.timeline)
     : true;
 
   if (!isTimelineActive) {
