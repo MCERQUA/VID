@@ -52,7 +52,10 @@ interface CanvasStateContextValue {
   removeEntity: (entity: SelectedEntity) => void;
   reorderAssetZIndex: (assetId: string, direction: 1 | -1) => void;
   updateAudioClip: (clipId: string, updates: Partial<AudioClip>) => void;
-  updateContentClip: (clipId: string, updates: Partial<ContentClip>) => void;
+  updateContentClip: (
+    clipId: string,
+    updates: (Partial<ContentClip> & { trackId?: string })
+  ) => void;
   toggleContentTrackLock: (trackId: string) => void;
   toggleContentTrackVisibility: (trackId: string) => void;
   toggleAudioTrackMute: (trackId: string) => void;
@@ -443,22 +446,45 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
         const clipIndex = track.clips.findIndex((clip) => clip.id === clipId);
         if (clipIndex !== -1) {
           const clip = track.clips[clipIndex];
+          const { trackId: targetTrackId, ...clipUpdates } = updates;
           const nextClip: ContentClip = {
             ...clip,
-            ...updates,
+            ...clipUpdates,
           };
 
           nextClip.start = clampTimelineTime(nextClip.start);
           nextClip.duration = Math.max(1, Math.min(nextClip.duration, TIMELINE_DURATION - nextClip.start));
 
-          track.clips = track.clips.map((item, index) => (index === clipIndex ? nextClip : item));
-          tracks[trackIndex] = { ...track };
+          const destinationTrackId = targetTrackId ?? track.id;
+
+          if (targetTrackId && targetTrackId !== track.id) {
+            const destinationIndex = tracks.findIndex((item) => item.id === targetTrackId);
+            if (destinationIndex === -1) {
+              return prev;
+            }
+
+            const destinationTrack = tracks[destinationIndex];
+            if (destinationTrack.locked) {
+              return prev;
+            }
+
+            track.clips = track.clips.filter((item) => item.id !== clipId);
+            tracks[trackIndex] = { ...track, clips: [...track.clips].sort((a, b) => a.start - b.start) };
+
+            destinationTrack.clips = [...destinationTrack.clips, nextClip].sort((a, b) => a.start - b.start);
+            tracks[destinationIndex] = { ...destinationTrack };
+          } else {
+            track.clips = track.clips
+              .map((item, index) => (index === clipIndex ? nextClip : item))
+              .sort((a, b) => a.start - b.start);
+            tracks[trackIndex] = { ...track };
+          }
 
           assetUpdate = {
             assetId: nextClip.canvasAssetId,
             start: nextClip.start,
             duration: nextClip.duration,
-            trackId: track.id,
+            trackId: destinationTrackId,
           };
           return tracks;
         }

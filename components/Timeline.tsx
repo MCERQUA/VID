@@ -139,13 +139,14 @@ type DragState = {
   pointerId: number;
   offset: number;
   kind: 'audio' | 'content';
+  trackId: string;
 };
 
 const useClipDrag = (
   timelineDuration: number,
   contentTracks: ReturnType<typeof useCanvasState>['contentTracks'],
   audioTracks: ReturnType<typeof useCanvasState>['audioTracks'],
-  updateContentClip: (clipId: string, updates: Partial<ContentClip>) => void,
+  updateContentClip: (clipId: string, updates: Partial<ContentClip> & { trackId?: string }) => void,
   updateAudioClip: (clipId: string, updates: Partial<AudioClip>) => void,
   mode: TimelineMode
 ) => {
@@ -232,9 +233,34 @@ const useClipDrag = (
     };
 
     const handlePointerUp = (event: PointerEvent) => {
-      if (event.pointerId === dragState.pointerId) {
-        setDragState(null);
+      if (event.pointerId !== dragState.pointerId) {
+        return;
       }
+
+      if (dragState.kind === 'content' && dragState.mode === 'move') {
+        const trackElements = timelineContentRef.current?.querySelectorAll<HTMLDivElement>(
+          '[data-track-kind="content"]'
+        );
+        if (trackElements) {
+          let targetTrack: { id: string; locked: boolean } | null = null;
+          trackElements.forEach((element) => {
+            const rect = element.getBoundingClientRect();
+            if (event.clientY >= rect.top && event.clientY <= rect.bottom) {
+              const id = element.dataset.trackId;
+              const locked = element.dataset.trackLocked === 'true';
+              if (id) {
+                targetTrack = { id, locked };
+              }
+            }
+          });
+
+          if (targetTrack && !targetTrack.locked && targetTrack.id !== dragState.trackId) {
+            updateContentClip(dragState.clipId, { trackId: targetTrack.id });
+          }
+        }
+      }
+
+      setDragState(null);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -488,63 +514,67 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
   }, [isPlaying, mode, pause, play, setMode]);
 
   const handleAudioClipPointerDown = React.useCallback(
-    (clip: AudioClip, trackLocked: boolean) => (event: React.PointerEvent<HTMLDivElement>) => {
-      if (mode !== 'edit' || trackLocked) {
-        return;
-      }
-      event.preventDefault();
-      const pointerTime = getTimeFromClientX(event.clientX);
-      setDragState({
-        mode: 'move',
-        clipId: clip.id,
-        pointerId: event.pointerId,
-        offset: pointerTime - clip.start,
-        kind: 'audio',
-      });
-      selectEntity({ kind: 'audio', id: clip.id });
-    },
-    [getTimeFromClientX, mode, selectEntity, setDragState]
-  );
-
-  const handleContentClipPointerDown = React.useCallback(
-    (clip: ContentClip, trackLocked: boolean) => (event: React.PointerEvent<HTMLDivElement>) => {
-      if (mode !== 'edit' || trackLocked) {
-        return;
-      }
-      event.preventDefault();
-      const pointerTime = getTimeFromClientX(event.clientX);
-      setDragState({
-        mode: 'move',
-        clipId: clip.id,
-        pointerId: event.pointerId,
-        offset: pointerTime - clip.start,
-        kind: 'content',
-      });
-      selectEntity({ kind: 'canvas', id: clip.canvasAssetId });
-    },
-    [getTimeFromClientX, mode, selectEntity, setDragState]
-  );
-
-  const handleResizeStart = React.useCallback(
-    (clipId: string, kind: 'audio' | 'content', trackLocked: boolean) =>
+    (clip: AudioClip, trackLocked: boolean, trackId: string) =>
       (event: React.PointerEvent<HTMLDivElement>) => {
         if (mode !== 'edit' || trackLocked) {
           return;
         }
         event.preventDefault();
-        setDragState({ mode: 'resize-start', clipId, pointerId: event.pointerId, offset: 0, kind });
+        const pointerTime = getTimeFromClientX(event.clientX);
+        setDragState({
+          mode: 'move',
+          clipId: clip.id,
+          pointerId: event.pointerId,
+          offset: pointerTime - clip.start,
+          kind: 'audio',
+          trackId,
+        });
+        selectEntity({ kind: 'audio', id: clip.id });
+      },
+    [getTimeFromClientX, mode, selectEntity, setDragState]
+  );
+
+  const handleContentClipPointerDown = React.useCallback(
+    (clip: ContentClip, trackLocked: boolean, trackId: string) =>
+      (event: React.PointerEvent<HTMLDivElement>) => {
+        if (mode !== 'edit' || trackLocked) {
+          return;
+        }
+        event.preventDefault();
+        const pointerTime = getTimeFromClientX(event.clientX);
+        setDragState({
+          mode: 'move',
+          clipId: clip.id,
+          pointerId: event.pointerId,
+          offset: pointerTime - clip.start,
+          kind: 'content',
+          trackId,
+        });
+        selectEntity({ kind: 'canvas', id: clip.canvasAssetId });
+      },
+    [getTimeFromClientX, mode, selectEntity, setDragState]
+  );
+
+  const handleResizeStart = React.useCallback(
+    (clipId: string, kind: 'audio' | 'content', trackLocked: boolean, trackId: string) =>
+      (event: React.PointerEvent<HTMLDivElement>) => {
+        if (mode !== 'edit' || trackLocked) {
+          return;
+        }
+        event.preventDefault();
+        setDragState({ mode: 'resize-start', clipId, pointerId: event.pointerId, offset: 0, kind, trackId });
       },
     [mode, setDragState]
   );
 
   const handleResizeEnd = React.useCallback(
-    (clipId: string, kind: 'audio' | 'content', trackLocked: boolean) =>
+    (clipId: string, kind: 'audio' | 'content', trackLocked: boolean, trackId: string) =>
       (event: React.PointerEvent<HTMLDivElement>) => {
         if (mode !== 'edit' || trackLocked) {
           return;
         }
         event.preventDefault();
-        setDragState({ mode: 'resize-end', clipId, pointerId: event.pointerId, offset: 0, kind });
+        setDragState({ mode: 'resize-end', clipId, pointerId: event.pointerId, offset: 0, kind, trackId });
       },
     [mode, setDragState]
   );
@@ -568,11 +598,12 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
         }
         const start = getTimeFromClientX(event.clientX);
         addVisualClip(payload.assetId, { start, trackIndex });
+        setCurrentTime(start);
       } catch (error) {
         // ignore invalid payloads
       }
     },
-    [addVisualClip, getTimeFromClientX, mode]
+    [addVisualClip, getTimeFromClientX, mode, setCurrentTime]
   );
 
   const handleAudioTrackDrop = React.useCallback(
@@ -693,12 +724,12 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
 
             <div className="flex w-full">
               <div className="w-48 flex-shrink-0 sticky left-0 z-10 bg-[#252526] border-r border-zinc-700">
-                {contentTracks.map((track) => (
-                  <ContentTrackHeader
-                    key={track.id}
-                    name={track.name}
-                    locked={track.locked}
-                    hidden={track.hidden}
+    {contentTracks.map((track) => (
+      <ContentTrackHeader
+        key={track.id}
+        name={track.name}
+        locked={track.locked}
+        hidden={track.hidden}
                     onToggleLock={() => toggleContentTrackLock(track.id)}
                     onToggleVisibility={() => toggleContentTrackVisibility(track.id)}
                     disableControls={mode !== 'edit'}
@@ -723,6 +754,9 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
                   <div
                     key={track.id}
                     className="relative h-20 border-b border-zinc-800"
+                    data-track-kind="content"
+                    data-track-id={track.id}
+                    data-track-locked={track.locked ? 'true' : 'false'}
                     onDragOver={handleDragOver}
                     onDrop={handleContentTrackDrop(trackIndex, Boolean(track.locked))}
                   >
@@ -735,9 +769,9 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
                         isDragging={dragState?.clipId === clip.id}
                         isLocked={Boolean(track.locked)}
                         mode={mode}
-                        onBodyPointerDown={handleContentClipPointerDown(clip, Boolean(track.locked))}
-                        onResizeStart={handleResizeStart(clip.id, 'content', Boolean(track.locked))}
-                        onResizeEnd={handleResizeEnd(clip.id, 'content', Boolean(track.locked))}
+                        onBodyPointerDown={handleContentClipPointerDown(clip, Boolean(track.locked), track.id)}
+                        onResizeStart={handleResizeStart(clip.id, 'content', Boolean(track.locked), track.id)}
+                        onResizeEnd={handleResizeEnd(clip.id, 'content', Boolean(track.locked), track.id)}
                       />
                     ))}
                     {track.clips.length === 0 && (
@@ -751,6 +785,9 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
                   <div
                     key={track.id}
                     className="relative h-20 border-b border-zinc-800"
+                    data-track-kind="audio"
+                    data-track-id={track.id}
+                    data-track-locked={track.locked ? 'true' : 'false'}
                     onDragOver={handleDragOver}
                     onDrop={handleAudioTrackDrop(trackIndex, Boolean(track.locked))}
                   >
@@ -763,9 +800,9 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
                         isDragging={dragState?.clipId === clip.id}
                         isLocked={Boolean(track.locked)}
                         mode={mode}
-                        onBodyPointerDown={handleAudioClipPointerDown(clip, Boolean(track.locked))}
-                        onResizeStart={handleResizeStart(clip.id, 'audio', Boolean(track.locked))}
-                        onResizeEnd={handleResizeEnd(clip.id, 'audio', Boolean(track.locked))}
+                        onBodyPointerDown={handleAudioClipPointerDown(clip, Boolean(track.locked), track.id)}
+                        onResizeStart={handleResizeStart(clip.id, 'audio', Boolean(track.locked), track.id)}
+                        onResizeEnd={handleResizeEnd(clip.id, 'audio', Boolean(track.locked), track.id)}
                       />
                     ))}
                     {track.clips.length === 0 && (
