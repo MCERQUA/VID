@@ -165,6 +165,11 @@ export const DEFAULT_AUDIO_TRACKS: AudioTrack[] = [
   { id: 'A2', name: 'Audio 2', clips: [], muted: false, solo: false, locked: false },
 ];
 
+export const TIMELINE_DURATION = 300; // seconds
+export const FRAME_RATE = 30;
+export const FRAME_DURATION = 1 / FRAME_RATE;
+export const snapTimelineTime = (time: number) => Math.round(time * FRAME_RATE) / FRAME_RATE;
+
 // Timeline icons
 export const SelectToolIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg {...props} viewBox="0 0 24 24" fill="currentColor">
@@ -241,6 +246,4 @@ export const MicIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <path d="M12,2A3,3 0 0,1 15,5V11A3,3 0 0,1 12,14A3,3 0 0,1 9,11V5A3,3 0 0,1 12,2M19,11C19,14.53 16.39,17.44 13,17.93V21H11V17.93C7.61,17.44 5,14.53 5,11H7A5,5 0 0,0 12,16A5,5 0 0,0 17,11H19Z" />
   </svg>
 );
-
-export const TIMELINE_DURATION = 300; // seconds
 
