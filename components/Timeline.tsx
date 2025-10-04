@@ -47,6 +47,7 @@ const formatDetailedTime = (seconds: number) => {
 const BASE_PIXELS_PER_SECOND = 40;
 const MIN_PIXELS_PER_SECOND = 10;
 const MAX_PIXELS_PER_SECOND = 160;
+const TRACK_PANEL_WIDTH = 192; // Tailwind w-48
 
 const createSeededRandom = (seedString: string) => {
   let seed = 0;
@@ -765,6 +766,7 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
   }, [markerStep, timelineDuration]);
 
   const scrubPosition = Math.min(currentTime, timelineDuration) * pixelsPerSecond;
+  const scrubPixel = Math.round(scrubPosition * 1000) / 1000;
 
   const startScrub = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -816,22 +818,29 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
       <div className="flex flex-1 min-h-0">
         <TimelineTools />
         <div className="flex-1 overflow-auto relative" ref={scrollContainerRef}>
-          <div className="min-w-max" style={{ width: 48 + timelinePixelWidth }}>
+          <div className="min-w-max" style={{ width: TRACK_PANEL_WIDTH + timelinePixelWidth }}>
             <div className="sticky top-0 z-20 bg-[#252526] border-b border-zinc-700">
               <div className="flex">
-                <div className="w-48 h-14 border-r border-zinc-700 flex items-center px-3">
+                <div
+                  className="h-14 border-r border-zinc-700 flex items-center px-3 sticky left-0 z-30 bg-[#252526]"
+                  style={{ width: TRACK_PANEL_WIDTH }}
+                >
                   <div className="text-xs font-mono text-gray-300">{formatDetailedTime(currentTime)}</div>
                 </div>
                 <div className="relative h-14 shrink-0" style={{ width: timelinePixelWidth }}>
                   <div role="presentation" className="absolute inset-0 cursor-ew-resize" onPointerDown={startScrub} />
                   {markers.map((time) => {
-                    const position = time * pixelsPerSecond;
+                    const position = Math.round(time * pixelsPerSecond * 1000) / 1000;
                     const isStart = time === 0;
                     return (
                       <div
                         key={time}
-                        className={`absolute h-full flex flex-col items-start ${isStart ? '' : '-translate-x-1/2'}`}
-                        style={{ left: position, minWidth: isStart ? undefined : '0.01px' }}
+                        className="absolute h-full flex flex-col items-start"
+                        style={{
+                          left: position,
+                          transform: `translateX(${isStart ? 0 : -50}%)`,
+                          minWidth: isStart ? undefined : '0.01px',
+                        }}
                       >
                         <span className="text-xs text-gray-400">
                           {markerStep < 1 ? formatDetailedTime(time) : formatBaseTime(time)}
@@ -842,18 +851,21 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
                   })}
                   <div
                     className="pointer-events-none absolute top-0 bottom-0 w-px bg-yellow-400"
-                    style={{ left: scrubPosition }}
+                    style={{ left: scrubPixel }}
                   />
                   <div
                     className="pointer-events-none absolute -bottom-1 w-2 h-2 rounded-full bg-yellow-400 translate-x-[-50%]"
-                    style={{ left: scrubPosition }}
+                    style={{ left: scrubPixel }}
                   />
                 </div>
               </div>
             </div>
 
             <div className="flex w-full">
-              <div className="w-48 flex-shrink-0 sticky left-0 z-10 bg-[#252526] border-r border-zinc-700">
+              <div
+                className="flex-shrink-0 sticky left-0 z-10 bg-[#252526] border-r border-zinc-700"
+                style={{ width: TRACK_PANEL_WIDTH }}
+              >
                 {contentTracks.map((track) => (
                   <ContentTrackHeader
                     key={track.id}
@@ -886,7 +898,7 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
               >
                 <div
                   className="pointer-events-none absolute top-0 bottom-0 w-px bg-yellow-400 z-30"
-                  style={{ left: scrubPosition }}
+                  style={{ left: scrubPixel }}
                 />
                 {contentTracks.map((track, trackIndex) => (
                   <div
