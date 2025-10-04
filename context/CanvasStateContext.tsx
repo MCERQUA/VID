@@ -1,5 +1,12 @@
 import React from 'react';
-import { DEFAULT_AUDIO_TRACKS, DEFAULT_CONTENT_TRACKS, LIBRARY_ASSETS, TIMELINE_DURATION } from '../constants';
+import {
+  DEFAULT_AUDIO_TRACKS,
+  DEFAULT_CONTENT_TRACKS,
+  FRAME_DURATION,
+  LIBRARY_ASSETS,
+  TIMELINE_DURATION,
+  snapTimelineTime,
+} from '../constants';
 import type {
   AssetType,
   AudioClip,
@@ -28,6 +35,16 @@ const cloneContentTracks = (tracks: ContentTrack[]): ContentTrack[] =>
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const clampTimelineTime = (value: number) => clamp(value, 0, TIMELINE_DURATION);
+const quantizeTimelineTime = (value: number) => clamp(snapTimelineTime(value), 0, TIMELINE_DURATION);
+const clampStartToFrame = (value: number) => {
+  const maxStart = Math.max(0, TIMELINE_DURATION - FRAME_DURATION);
+  return clamp(quantizeTimelineTime(value), 0, maxStart);
+};
+const clampDurationForStart = (duration: number, start: number) => {
+  const maxDuration = Math.max(FRAME_DURATION, TIMELINE_DURATION - start);
+  const snapped = Math.max(FRAME_DURATION, snapTimelineTime(duration));
+  return clamp(snapped, FRAME_DURATION, maxDuration);
+};
 
 interface CanvasStateContextValue {
   assets: CanvasAsset[];
@@ -100,7 +117,7 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const setCurrentTime = React.useCallback((time: number) => {
     setCurrentTimeState((prev) => {
-      const next = clampTimelineTime(time);
+      const next = quantizeTimelineTime(time);
       if (next === prev) {
         return prev;
       }
@@ -158,13 +175,23 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
           return null;
         }
 
-        const start = clampTimelineTime(currentTime);
+        const start = clampStartToFrame(currentTime);
         const estimatedDuration = libraryAsset.duration ?? 45;
-        const duration = Math.max(1, Math.min(estimatedDuration, TIMELINE_DURATION - start));
+        const duration = clampDurationForStart(estimatedDuration, start);
         timelineMeta = { start, duration, trackId: availableTrack.id, clipId: createId() };
         shouldCreateTimelineClip = true;
-      } else if (!timelineMeta.clipId) {
-        timelineMeta.clipId = createId();
+      } else {
+        const normalizedStart = clampStartToFrame(timelineMeta.start);
+        const normalizedDuration = clampDurationForStart(
+          timelineMeta.duration ?? libraryAsset.duration ?? 45,
+          normalizedStart
+        );
+        timelineMeta = {
+          ...timelineMeta,
+          start: normalizedStart,
+          duration: normalizedDuration,
+          clipId: timelineMeta.clipId ?? createId(),
+        };
       }
 
       const newAsset: CanvasAsset = {
@@ -242,13 +269,13 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
           return prev;
         }
 
-        const start = clampTimelineTime(options.start ?? currentTime);
+        const start = clampStartToFrame(options.start ?? currentTime);
         const clip: AudioClip = {
           id: clipId,
           assetId: libraryAsset.id,
           name: libraryAsset.name,
           start,
-          duration: Math.max(1, Math.min(duration, TIMELINE_DURATION - start)),
+          duration: clampDurationForStart(duration, start),
           source: libraryAsset.mediaUrl,
           volume: 0.8,
           fadeIn: 0,
@@ -287,9 +314,9 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
 
         const clipId = createId();
-        const start = clampTimelineTime(options.start ?? currentTime);
+        const start = clampStartToFrame(options.start ?? currentTime);
         const estimatedDuration = libraryAsset.duration ?? 45;
-        const duration = Math.max(1, Math.min(estimatedDuration, TIMELINE_DURATION - start));
+        const duration = clampDurationForStart(estimatedDuration, start);
         const timelineMeta = { start, duration, trackId: track.id, clipId };
         const createdAssetId =
           addAssetToCanvas(assetId, {
@@ -414,9 +441,8 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
             ...updates,
           };
 
-          nextClip.start = clampTimelineTime(nextClip.start);
-          nextClip.duration = clampTimelineTime(nextClip.duration);
-          nextClip.duration = Math.max(1, Math.min(nextClip.duration, TIMELINE_DURATION - nextClip.start));
+          nextClip.start = clampStartToFrame(nextClip.start);
+          nextClip.duration = clampDurationForStart(nextClip.duration, nextClip.start);
 
           track.clips = track.clips.map((item, index) => (index === clipIndex ? nextClip : item));
           tracks[trackIndex] = { ...track };
@@ -452,8 +478,8 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
             ...clipUpdates,
           };
 
-          nextClip.start = clampTimelineTime(nextClip.start);
-          nextClip.duration = Math.max(1, Math.min(nextClip.duration, TIMELINE_DURATION - nextClip.start));
+          nextClip.start = clampStartToFrame(nextClip.start);
+          nextClip.duration = clampDurationForStart(nextClip.duration, nextClip.start);
 
           const destinationTrackId = targetTrackId ?? track.id;
 

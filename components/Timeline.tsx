@@ -16,6 +16,8 @@ import {
   EyeIcon,
   LockIcon,
   ASSET_DRAG_TYPE,
+  FRAME_DURATION,
+  snapTimelineTime,
 } from '../constants';
 import { useCanvasState } from '../context/CanvasStateContext';
 import type { AudioClip, ContentClip, TimelineMode } from '../types';
@@ -183,7 +185,7 @@ const useClipDrag = (
   mode: TimelineMode,
   pixelsPerSecond: number,
   scrollContainerRef: React.RefObject<HTMLDivElement>,
-  timelineAreaRef: React.RefObject<HTMLDivElement>
+  timelineContentRef: React.RefObject<HTMLDivElement>
 ) => {
   const [dragState, setDragState] = React.useState<DragState | null>(null);
 
@@ -195,14 +197,17 @@ const useClipDrag = (
       }
 
       const rect = contentNode.getBoundingClientRect();
-      const scrollContainer = contentNode.parentElement instanceof HTMLElement ? contentNode.parentElement : null;
+      const scrollContainer =
+        scrollContainerRef.current ??
+        (contentNode.parentElement instanceof HTMLElement ? contentNode.parentElement : null);
       const scrollLeft = scrollContainer?.scrollLeft ?? 0;
       const availableWidth = contentNode.scrollWidth || rect.width;
       const position = clamp(clientX - rect.left + scrollLeft, 0, availableWidth);
       const ratio = availableWidth === 0 ? 0 : position / availableWidth;
-      return ratio * timelineDuration;
+      const rawTime = ratio * timelineDuration;
+      return Math.min(timelineDuration, Math.max(0, snapTimelineTime(rawTime)));
     },
-    []
+    [scrollContainerRef, timelineContentRef, timelineDuration]
   );
 
   const findHoverContentTrack = React.useCallback(
@@ -227,7 +232,7 @@ const useClipDrag = (
 
       return null;
     },
-    []
+    [timelineContentRef]
   );
 
   React.useEffect(() => {
@@ -255,16 +260,23 @@ const useClipDrag = (
         }
 
         if (dragState.mode === 'move') {
-          const newStart = clamp(pointerTime - dragState.offset, 0, timelineDuration - target.duration);
+          const proposedStart = pointerTime - dragState.offset;
+          const snappedStart = snapTimelineTime(proposedStart);
+          const maxStart = Math.max(0, timelineDuration - Math.max(FRAME_DURATION, target.duration));
+          const newStart = clamp(snappedStart, 0, maxStart);
           updateAudioClip(target.id, { start: newStart });
         } else if (dragState.mode === 'resize-start') {
           const endTime = target.start + target.duration;
-          const newStart = clamp(pointerTime, 0, endTime - 1);
-          const newDuration = clamp(endTime - newStart, 1, timelineDuration - newStart);
+          const snappedPointer = snapTimelineTime(pointerTime);
+          const maxStart = Math.max(0, endTime - FRAME_DURATION);
+          const newStart = clamp(snappedPointer, 0, maxStart);
+          const newDuration = Math.max(FRAME_DURATION, snapTimelineTime(endTime - newStart));
           updateAudioClip(target.id, { start: newStart, duration: newDuration });
         } else if (dragState.mode === 'resize-end') {
-          const newEnd = clamp(pointerTime, target.start + 1, timelineDuration);
-          const newDuration = clamp(newEnd - target.start, 1, timelineDuration - target.start);
+          const snappedPointer = snapTimelineTime(pointerTime);
+          const minEnd = target.start + FRAME_DURATION;
+          const newEnd = clamp(snappedPointer, minEnd, timelineDuration);
+          const newDuration = Math.max(FRAME_DURATION, snapTimelineTime(newEnd - target.start));
           updateAudioClip(target.id, { duration: newDuration });
         }
       } else {
@@ -281,7 +293,10 @@ const useClipDrag = (
         }
 
         if (dragState.mode === 'move') {
-          const newStart = clamp(pointerTime - dragState.offset, 0, timelineDuration - target.duration);
+          const proposedStart = pointerTime - dragState.offset;
+          const snappedStart = snapTimelineTime(proposedStart);
+          const maxStart = Math.max(0, timelineDuration - Math.max(FRAME_DURATION, target.duration));
+          const newStart = clamp(snappedStart, 0, maxStart);
           updateContentClip(target.id, { start: newStart });
 
           const hoveredTrack = findHoverContentTrack(event.clientY);
@@ -300,12 +315,16 @@ const useClipDrag = (
           }
         } else if (dragState.mode === 'resize-start') {
           const endTime = target.start + target.duration;
-          const newStart = clamp(pointerTime, 0, endTime - 1);
-          const newDuration = clamp(endTime - newStart, 1, timelineDuration - newStart);
+          const snappedPointer = snapTimelineTime(pointerTime);
+          const maxStart = Math.max(0, endTime - FRAME_DURATION);
+          const newStart = clamp(snappedPointer, 0, maxStart);
+          const newDuration = Math.max(FRAME_DURATION, snapTimelineTime(endTime - newStart));
           updateContentClip(target.id, { start: newStart, duration: newDuration });
         } else if (dragState.mode === 'resize-end') {
-          const newEnd = clamp(pointerTime, target.start + 1, timelineDuration);
-          const newDuration = clamp(newEnd - target.start, 1, timelineDuration - target.start);
+          const snappedPointer = snapTimelineTime(pointerTime);
+          const minEnd = target.start + FRAME_DURATION;
+          const newEnd = clamp(snappedPointer, minEnd, timelineDuration);
+          const newDuration = Math.max(FRAME_DURATION, snapTimelineTime(newEnd - target.start));
           updateContentClip(target.id, { duration: newDuration });
         }
       }
