@@ -47,7 +47,7 @@ const formatDetailedTime = (seconds: number) => {
 const BASE_PIXELS_PER_SECOND = 40;
 const MIN_PIXELS_PER_SECOND = 10;
 const MAX_PIXELS_PER_SECOND = 160;
-const TRACK_PANEL_WIDTH = 192; // Tailwind w-48
+const FALLBACK_TRACK_PANEL_WIDTH = 192; // Tailwind w-48
 
 const createSeededRandom = (seedString: string) => {
   let seed = 0;
@@ -579,12 +579,49 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
   const [pixelsPerSecond, setPixelsPerSecond] = React.useState(BASE_PIXELS_PER_SECOND);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const timelineTracksRef = React.useRef<HTMLDivElement>(null);
+  const trackSidebarRef = React.useRef<HTMLDivElement>(null);
+  const trackHeaderRef = React.useRef<HTMLDivElement>(null);
+  const [trackPanelWidth, setTrackPanelWidth] = React.useState(FALLBACK_TRACK_PANEL_WIDTH);
+
+  React.useLayoutEffect(() => {
+    const elements = [trackSidebarRef.current, trackHeaderRef.current].filter(
+      (element): element is HTMLDivElement => Boolean(element)
+    );
+
+    if (elements.length === 0) {
+      return undefined;
+    }
+
+    const updateWidth = () => {
+      const measured = elements.reduce((max, element) => {
+        const width = element.getBoundingClientRect().width;
+        return width > max ? width : max;
+      }, 0);
+      const fallback = measured > 0 ? measured : FALLBACK_TRACK_PANEL_WIDTH;
+      setTrackPanelWidth((prev) => {
+        const next = Math.round(fallback);
+        return prev === next ? prev : next;
+      });
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(updateWidth);
+      elements.forEach((element) => observer.observe(element));
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
 
   const handleZoomChange = React.useCallback((value: number) => {
     setPixelsPerSecond(clamp(value, MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND));
   }, []);
 
   const timelinePixelWidth = Math.max(1, timelineDuration * pixelsPerSecond);
+  const layoutTrackPanelWidth = Math.max(0, trackPanelWidth);
 
   const { dragState, setDragState, getTimeFromClientX } = useClipDrag(
     timelineDuration,
@@ -818,12 +855,13 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
       <div className="flex flex-1 min-h-0">
         <TimelineTools />
         <div className="flex-1 overflow-auto relative" ref={scrollContainerRef}>
-          <div className="min-w-max" style={{ width: TRACK_PANEL_WIDTH + timelinePixelWidth }}>
+          <div className="min-w-max" style={{ width: layoutTrackPanelWidth + timelinePixelWidth }}>
             <div className="sticky top-0 z-20 bg-[#252526] border-b border-zinc-700">
               <div className="flex">
                 <div
+                  ref={trackHeaderRef}
                   className="h-14 border-r border-zinc-700 flex items-center px-3 sticky left-0 z-30 bg-[#252526]"
-                  style={{ width: TRACK_PANEL_WIDTH }}
+                  style={{ width: layoutTrackPanelWidth }}
                 >
                   <div className="text-xs font-mono text-gray-300">{formatDetailedTime(currentTime)}</div>
                 </div>
@@ -863,8 +901,9 @@ const Timeline: React.FC<{ height: number }> = ({ height }) => {
 
             <div className="flex w-full">
               <div
+                ref={trackSidebarRef}
                 className="flex-shrink-0 sticky left-0 z-10 bg-[#252526] border-r border-zinc-700"
-                style={{ width: TRACK_PANEL_WIDTH }}
+                style={{ width: layoutTrackPanelWidth }}
               >
                 {contentTracks.map((track) => (
                   <ContentTrackHeader
