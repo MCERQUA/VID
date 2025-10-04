@@ -1,10 +1,23 @@
 
 import React from 'react';
-import { ASSET_DRAG_TYPE } from '../constants';
+import { ASSET_DRAG_TYPE, FRAME_DURATION } from '../constants';
 import { useCanvasState } from '../context/CanvasStateContext';
 import type { CanvasAsset, TimelineMode } from '../types';
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const secondsToFrameIndex = (time: number) => Math.round(time / FRAME_DURATION + 1e-6);
+
+const secondsToFrameCount = (time: number) => Math.max(1, Math.round(time / FRAME_DURATION + 1e-6));
+
+const getClipFrameWindow = (clip: { start: number; duration: number }) => {
+  const startFrame = secondsToFrameIndex(clip.start);
+  const endFrame = startFrame + secondsToFrameCount(clip.duration);
+  return { startFrame, endFrame };
+};
+
+const isFrameWithinWindow = (frameIndex: number, window: { startFrame: number; endFrame: number }) =>
+  frameIndex >= window.startFrame && frameIndex < window.endFrame;
 
 const stageStyle = {
   aspectRatio: '16 / 9',
@@ -21,6 +34,7 @@ const CanvasAssetLayer: React.FC<{
   currentTime: number;
   isTrackHidden: boolean;
   zIndex: number;
+  timelineWindow?: { startFrame: number; endFrame: number } | null;
 }> = ({
   asset,
   isSelected,
@@ -32,13 +46,17 @@ const CanvasAssetLayer: React.FC<{
   currentTime,
   isTrackHidden,
   zIndex,
+  timelineWindow,
 }) => {
   if (!asset.isVisible || isTrackHidden) {
     return null;
   }
 
-  const isTimelineActive = asset.timeline
-    ? currentTime >= asset.timeline.start && currentTime < asset.timeline.start + asset.timeline.duration
+  const currentFrame = secondsToFrameIndex(currentTime);
+  const isTimelineActive = timelineWindow
+    ? isFrameWithinWindow(currentFrame, timelineWindow)
+    : asset.timeline
+    ? isFrameWithinWindow(currentFrame, getClipFrameWindow(asset.timeline))
     : true;
 
   if (!isTimelineActive) {
@@ -303,14 +321,25 @@ const CenterPanel: React.FC = () => {
     [mode, updateAssetTransform]
   );
 
-  const hiddenTracks = React.useMemo(() => {
-    const ids = new Set<string>();
+  const { hiddenTracks, clipWindowByAssetId } = React.useMemo(() => {
+    const hidden = new Set<string>();
+    const clipMap = new Map<string, { startFrame: number; endFrame: number; trackId: string }>();
+
     for (const track of contentTracks) {
       if (track.hidden) {
-        ids.add(track.id);
+        hidden.add(track.id);
+      }
+
+      for (const clip of track.clips) {
+        const window = getClipFrameWindow(clip);
+        clipMap.set(clip.canvasAssetId, {
+          ...window,
+          trackId: track.id,
+        });
       }
     }
-    return ids;
+
+    return { hiddenTracks: hidden, clipWindowByAssetId: clipMap };
   }, [contentTracks]);
 
   const { map: trackLayers, totalTracks } = React.useMemo(() => {
@@ -323,15 +352,14 @@ const CenterPanel: React.FC = () => {
   }, [contentTracks]);
 
   const getAssetZIndex = React.useCallback(
-    (asset: CanvasAsset) => {
-      const trackId = asset.timeline?.trackId;
+    (trackId: string | undefined, baseZIndex: number) => {
       if (trackId) {
         const layer = trackLayers.get(trackId);
         if (typeof layer === 'number') {
-          return layer * 1000 + asset.zIndex;
+          return layer * 1000 + baseZIndex;
         }
       }
-      return (totalTracks + 1) * 1000 + asset.zIndex;
+      return (totalTracks + 1) * 1000 + baseZIndex;
     },
     [trackLayers, totalTracks]
   );
@@ -355,21 +383,34 @@ const CenterPanel: React.FC = () => {
               backgroundPosition: '0 0,12px 12px',
             }}
           />
-          {assets.map((asset) => (
-            <CanvasAssetLayer
-              key={asset.id}
-              asset={asset}
-              isSelected={selectedCanvasId === asset.id}
-              onSelect={() => selectEntity({ kind: 'canvas', id: asset.id })}
-              onStartMove={startMove(asset)}
-              onStartResize={startResize(asset)}
-              onNudge={(dx, dy) => handleNudge(asset, dx, dy)}
-              mode={mode}
-              currentTime={currentTime}
-              isTrackHidden={asset.timeline ? hiddenTracks.has(asset.timeline.trackId) : false}
-              zIndex={getAssetZIndex(asset)}
-            />
-          ))}
+          {assets.map((asset) => {
+            const timelineWindowEntry = clipWindowByAssetId.get(asset.id);
+            const timelineWindow = timelineWindowEntry
+              ? { startFrame: timelineWindowEntry.startFrame, endFrame: timelineWindowEntry.endFrame }
+              : asset.timeline
+              ? getClipFrameWindow(asset.timeline)
+              : null;
+            const trackId = timelineWindowEntry?.trackId ?? asset.timeline?.trackId;
+            const isHidden = trackId ? hiddenTracks.has(trackId) : false;
+            const zIndex = getAssetZIndex(trackId, asset.zIndex);
+
+            return (
+              <CanvasAssetLayer
+                key={asset.id}
+                asset={asset}
+                isSelected={selectedCanvasId === asset.id}
+                onSelect={() => selectEntity({ kind: 'canvas', id: asset.id })}
+                onStartMove={startMove(asset)}
+                onStartResize={startResize(asset)}
+                onNudge={(dx, dy) => handleNudge(asset, dx, dy)}
+                mode={mode}
+                currentTime={currentTime}
+                isTrackHidden={isHidden}
+                zIndex={zIndex}
+                timelineWindow={timelineWindow}
+              />
+            );
+          })}
           <div className="absolute inset-0 border border-white/20 pointer-events-none rounded-lg" />
         </div>
       </div>
