@@ -20,7 +20,19 @@ const CanvasAssetLayer: React.FC<{
   mode: TimelineMode;
   currentTime: number;
   isTrackHidden: boolean;
-}> = ({ asset, isSelected, onSelect, onStartMove, onStartResize, onNudge, mode, currentTime, isTrackHidden }) => {
+  zIndex: number;
+}> = ({
+  asset,
+  isSelected,
+  onSelect,
+  onStartMove,
+  onStartResize,
+  onNudge,
+  mode,
+  currentTime,
+  isTrackHidden,
+  zIndex,
+}) => {
   if (!asset.isVisible || isTrackHidden) {
     return null;
   }
@@ -43,6 +55,7 @@ const CanvasAssetLayer: React.FC<{
     height: `${asset.transform.height}%`,
     transform: `rotate(${asset.transform.rotation}deg)`,
     opacity: asset.transform.opacity,
+    zIndex,
   };
 
   return (
@@ -300,6 +313,29 @@ const CenterPanel: React.FC = () => {
     return ids;
   }, [contentTracks]);
 
+  const { map: trackLayers, totalTracks } = React.useMemo(() => {
+    const totalTracksCount = contentTracks.length;
+    const map = new Map<string, number>();
+    contentTracks.forEach((track, index) => {
+      map.set(track.id, totalTracksCount - index);
+    });
+    return { map, totalTracks: totalTracksCount };
+  }, [contentTracks]);
+
+  const getAssetZIndex = React.useCallback(
+    (asset: CanvasAsset) => {
+      const trackId = asset.timeline?.trackId;
+      if (trackId) {
+        const layer = trackLayers.get(trackId);
+        if (typeof layer === 'number') {
+          return layer * 1000 + asset.zIndex;
+        }
+      }
+      return (totalTracks + 1) * 1000 + asset.zIndex;
+    },
+    [trackLayers, totalTracks]
+  );
+
   return (
     <main className="flex flex-col flex-1 bg-[#2d2d2d] items-center justify-center p-4 overflow-hidden">
       <div className="relative w-full max-w-full max-h-full flex-1 flex items-center justify-center">
@@ -331,6 +367,7 @@ const CenterPanel: React.FC = () => {
               mode={mode}
               currentTime={currentTime}
               isTrackHidden={asset.timeline ? hiddenTracks.has(asset.timeline.trackId) : false}
+              zIndex={getAssetZIndex(asset)}
             />
           ))}
           <div className="absolute inset-0 border border-white/20 pointer-events-none rounded-lg" />
