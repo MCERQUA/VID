@@ -102,6 +102,11 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [mode, setMode] = React.useState<TimelineMode>('edit');
   const [currentTime, setCurrentTimeState] = React.useState(0);
   const [isPlaying, setIsPlaying] = React.useState(false);
+  const isPlayingRef = React.useRef(isPlaying);
+
+  React.useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   const libraryLookup = React.useMemo(() => {
     const map = new Map<string, LibraryAsset>();
@@ -663,23 +668,62 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     let frameId: number;
     let last = performance.now();
+    let remainder = 0;
+    let cancelled = false;
 
     const step = (now: number) => {
+      if (cancelled) {
+        return;
+      }
+
       const delta = (now - last) / 1000;
       last = now;
+      remainder += delta;
+
       setCurrentTimeState((prev) => {
-        const next = clampTimelineTime(prev + delta);
-        if (next >= TIMELINE_DURATION) {
+        const snappedPrev = clampTimelineTime(snapTimelineTime(prev));
+        let current = snappedPrev;
+
+        if (current + remainder >= TIMELINE_DURATION) {
+          isPlayingRef.current = false;
           setIsPlaying(false);
+          remainder = 0;
+          cancelled = true;
           return TIMELINE_DURATION;
         }
-        return next;
+
+        let advanced = false;
+
+        while (remainder >= FRAME_DURATION) {
+          remainder -= FRAME_DURATION;
+          const nextFrameTime = snapTimelineTime(current + FRAME_DURATION);
+
+          if (nextFrameTime >= TIMELINE_DURATION) {
+            isPlayingRef.current = false;
+            setIsPlaying(false);
+            remainder = 0;
+            cancelled = true;
+            return TIMELINE_DURATION;
+          }
+
+          current = nextFrameTime;
+          advanced = true;
+        }
+
+        return advanced ? current : snappedPrev;
       });
-      frameId = requestAnimationFrame(step);
+
+      if (!cancelled && isPlayingRef.current) {
+        frameId = requestAnimationFrame(step);
+      }
     };
 
     frameId = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frameId);
+    return () => {
+      cancelled = true;
+      remainder = 0;
+      cancelAnimationFrame(frameId);
+    };
   }, [isPlaying]);
 
   React.useEffect(() => {
