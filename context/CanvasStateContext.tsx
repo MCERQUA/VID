@@ -146,6 +146,24 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       const createdId = createId();
 
+      let timelineMeta = options.timeline ? { ...options.timeline } : undefined;
+      let shouldCreateTimelineClip = false;
+
+      if (!timelineMeta) {
+        const availableTrack = contentTracks.find((track) => !track.locked) ?? contentTracks[0];
+        if (!availableTrack) {
+          return null;
+        }
+
+        const start = clampTimelineTime(currentTime);
+        const estimatedDuration = libraryAsset.duration ?? 45;
+        const duration = Math.max(1, Math.min(estimatedDuration, TIMELINE_DURATION - start));
+        timelineMeta = { start, duration, trackId: availableTrack.id, clipId: createId() };
+        shouldCreateTimelineClip = true;
+      } else if (!timelineMeta.clipId) {
+        timelineMeta.clipId = createId();
+      }
+
       const newAsset: CanvasAsset = {
         id: createdId,
         assetId: libraryAsset.id,
@@ -157,15 +175,44 @@ export const CanvasStateProvider: React.FC<{ children: React.ReactNode }> = ({ c
         zIndex: assets.length + 1,
         isLocked: false,
         isVisible: true,
-        timeline: options.timeline ? { ...options.timeline, clipId: options.timeline.clipId } : undefined,
+        timeline: timelineMeta,
       };
 
       setAssets((prev) => [...prev, newAsset]);
       setSelected({ kind: 'canvas', id: createdId });
 
+      if (shouldCreateTimelineClip && timelineMeta) {
+        const clipType: ContentClip['type'] =
+          libraryAsset.type === 'character' || libraryAsset.type === 'graphic' || libraryAsset.type === 'background'
+            ? 'image'
+            : 'video';
+
+        const clip: ContentClip = {
+          id: timelineMeta.clipId,
+          assetId: libraryAsset.id,
+          canvasAssetId: createdId,
+          name: libraryAsset.name,
+          start: timelineMeta.start,
+          duration: timelineMeta.duration,
+          type: clipType,
+          thumbnailUrl: libraryAsset.thumbnailUrl,
+        };
+
+        setContentTracks((prev) =>
+          prev.map((track) =>
+            track.id === timelineMeta.trackId
+              ? {
+                  ...track,
+                  clips: [...track.clips, clip],
+                }
+              : track
+          )
+        );
+      }
+
       return createdId;
     },
-    [assets.length, libraryLookup, mode]
+    [assets.length, contentTracks, currentTime, libraryLookup, mode]
   );
 
   const addMusicClip = React.useCallback<CanvasStateContextValue['addMusicClip']>(
